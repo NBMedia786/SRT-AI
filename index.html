@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI SRT Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* A little custom style for the file drag-over */
+        .drag-over {
+            border-color: #3b82f6; /* blue-500 */
+            background-color: #eff6ff; /* blue-50 */
+            transform: scale(1.02);
+            transition: all 0.2s ease;
+        }
+        /* Custom scrollbar for the SRT preview */
+        .srt-preview::-webkit-scrollbar {
+            width: 8px;
+        }
+        .srt-preview::-webkit-scrollbar-track {
+            background: #f1f5f9; /* slate-100 */
+            border-radius: 4px;
+        }
+        .srt-preview::-webkit-scrollbar-thumb {
+            background: #94a3b8; /* slate-400 */
+            border-radius: 4px;
+        }
+        .srt-preview::-webkit-scrollbar-thumb:hover {
+            background: #64748b; /* slate-500 */
+        }
+        /* Smooth transitions */
+        .transition-smooth {
+            transition: all 0.3s ease-in-out;
+        }
+        /* Pulse animation for processing */
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        .pulse-glow {
+            animation: pulse-glow 2s ease-in-out infinite;
+        }
+        /* Log entry styling */
+        .log-success { color: #10b981; }
+        .log-warning { color: #f59e0b; }
+        .log-error { color: #ef4444; }
+        
+        /* Custom range slider styling */
+        .slider-thumb::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: all 0.2s ease;
+        }
+        .slider-thumb::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+            box-shadow: 0 4px 8px rgba(59, 130, 246, 0.4);
+        }
+        .slider-thumb::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: all 0.2s ease;
+        }
+        .slider-thumb::-moz-range-thumb:hover {
+            transform: scale(1.2);
+            box-shadow: 0 4px 8px rgba(59, 130, 246, 0.4);
+        }
+        .slider-thumb:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .slider-thumb:disabled::-webkit-slider-thumb {
+            background: #94a3b8;
+            cursor: not-allowed;
+        }
+        .slider-thumb:disabled::-moz-range-thumb {
+            background: #94a3b8;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans antialiased text-slate-800">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-4xl min-h-screen flex flex-col">
+        
+        <header class="text-center mb-8">
+            <div class="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl mb-4 shadow-lg">
+                <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path>
+                </svg>
+            </div>
+            <h1 class="text-3xl md:text-4xl font-bold text-slate-900 mb-2">AI-Powered SRT Generator</h1>
+            <p class="text-lg text-slate-600">Transform your videos into perfectly-timed subtitles with AI</p>
+            <div class="mt-4 flex items-center justify-center gap-6 text-sm text-slate-500">
+                <div class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                    </svg>
+                    <span>Natural Pacing</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                    </svg>
+                    <span>Smart Timing</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                    </svg>
+                    <span>Easy Editing</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="bg-white rounded-lg shadow-xl p-6 md:p-10 flex-grow">
+
+            <div id="upload-view">
+                <!-- Step indicator -->
+                <div class="mb-8 flex items-center justify-center gap-4">
+                    <div class="flex items-center gap-2">
+                        <div class="flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 text-white font-bold text-sm">1</div>
+                        <span class="text-sm font-medium text-slate-700">Customize</span>
+                    </div>
+                    <div class="w-12 h-0.5 bg-slate-300"></div>
+                    <div class="flex items-center gap-2">
+                        <div class="flex items-center justify-center w-8 h-8 rounded-full bg-slate-300 text-slate-600 font-bold text-sm">2</div>
+                        <span class="text-sm font-medium text-slate-500">Upload</span>
+                    </div>
+                    <div class="w-12 h-0.5 bg-slate-300"></div>
+                    <div class="flex items-center gap-2">
+                        <div class="flex items-center justify-center w-8 h-8 rounded-full bg-slate-300 text-slate-600 font-bold text-sm">3</div>
+                        <span class="text-sm font-medium text-slate-500">Download</span>
+                    </div>
+                </div>
+
+                <div class="mb-6 text-left">
+                    <label for="prompt-input" class="block font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                        </svg>
+                        Custom Instructions (Optional)
+                    </label>
+                    <textarea id="prompt-input" class="w-full h-28 md:h-32 bg-slate-50 border border-slate-300 rounded-lg p-4 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-smooth" placeholder="e.g., 'Use formal language' or 'This is a technical presentation about machine learning'"></textarea>
+                    <p class="text-xs text-slate-500 mt-2 flex items-start gap-2">
+                        <svg class="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                        </svg>
+                        <span>Add specific instructions to help AI understand context, tone, or terminology</span>
+                    </p>
+                </div>
+
+                <div id="drop-zone" class="border-4 border-dashed border-slate-300 rounded-lg p-12 text-center cursor-pointer transition-smooth hover:border-blue-500 hover:bg-blue-50 hover:shadow-lg">
+                    <input type="file" id="file-input" class="hidden" accept="video/*,audio/*">
+                    
+                    <svg class="mx-auto h-16 w-16 text-slate-400 transition-smooth" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+
+                    <p class="mt-4 text-2xl font-semibold text-slate-700">Drag & drop your file here</p>
+                    <p class="text-slate-500 mt-1">or</p>
+                    <button id="browse-button" class="mt-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-bold py-3 px-8 rounded-lg shadow-md hover:shadow-xl hover:from-blue-700 hover:to-blue-800 transition-smooth transform hover:scale-105">
+                        <span class="flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+                            </svg>
+                            Browse Files
+                        </span>
+                    </button>
+                    <p class="text-xs text-slate-400 mt-6 flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path>
+                        </svg>
+                        Supports MP4, MOV, MP3, WAV, and more (up to 750MB)
+                    </p>
+                </div>
+
+                <div id="post-upload-controls" class="hidden mt-8 bg-slate-50 border border-slate-200 rounded-lg p-6 transition-smooth">
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <div>
+                            <p class="text-xs uppercase tracking-wide text-slate-500">Selected file</p>
+                            <p class="mt-1 text-lg font-semibold text-slate-700 flex items-center gap-2">
+                                <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4h16v16H4z"></path>
+                                </svg>
+                                <span id="selected-file-name">No file chosen</span>
+                            </p>
+                        </div>
+                        <button id="reselect-button" class="w-full md:w-auto bg-slate-200 text-slate-700 font-semibold py-2 px-4 rounded-lg hover:bg-slate-300 transition-smooth flex items-center justify-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                            </svg>
+                            Choose another file
+                        </button>
+                    </div>
+
+                    <div class="mt-6 bg-white border border-slate-200 rounded-lg p-4">
+                        <label for="pre-words-per-line-slider" class="block font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                            <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"></path>
+                            </svg>
+                            Words Per Line
+                        </label>
+                        <div class="flex items-center space-x-4">
+                            <input type="range" id="pre-words-per-line-slider" min="3" max="20" value="6" step="1" class="w-full h-3 bg-slate-200 rounded-lg cursor-pointer slider-thumb">
+                            <span id="pre-words-per-line-value" class="font-bold text-blue-600 text-xl w-12 text-center bg-blue-50 rounded-lg py-1">6</span>
+                        </div>
+                        <p class="text-xs text-slate-500 mt-3 flex items-start gap-2">
+                            <svg class="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                            </svg>
+                            Adjust subtitle length before running the analysis.
+                        </p>
+                    </div>
+
+                    <button id="analyze-button" class="mt-6 w-full bg-gradient-to-r from-blue-600 to-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:shadow-xl hover:from-blue-700 hover:to-blue-800 transition-smooth transform hover:scale-105 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2" disabled>
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6 1a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        Analyze
+                    </button>
+                </div>
+            </div>
+
+            <div id="processing-view" class="hidden">
+                <div class="flex flex-col items-center justify-center p-12">
+                    <div class="relative">
+                        <svg class="animate-spin h-16 w-16 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <div class="absolute inset-0 flex items-center justify-center">
+                            <svg class="w-8 h-8 text-blue-600 pulse-glow" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M2 10.5a1.5 1.5 0 113 0v6a1.5 1.5 0 01-3 0v-6zM6 10.333v5.43a2 2 0 001.106 1.79l.05.025A4 4 0 008.943 18h5.416a2 2 0 001.962-1.608l1.2-6A2 2 0 0015.56 8H12V4a2 2 0 00-2-2 1 1 0 00-1 1v.667a4 4 0 01-.8 2.4L6.8 7.933a4 4 0 00-.8 2.4z"></path>
+                            </svg>
+                        </div>
+                    </div>
+                    <p class="text-2xl font-semibold text-slate-700 mt-8">AI is analyzing your file...</p>
+                    <p class="text-slate-500 mt-2">Transcribing audio and generating perfectly-timed subtitles</p>
+                    <div class="mt-6 flex items-center gap-2 text-sm text-slate-400">
+                        <div class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                        <span>This usually takes 30-60 seconds</span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="result-view" class="hidden">
+                <!-- Success banner -->
+                <div class="mb-6 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
+                    <svg class="w-6 h-6 text-green-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                    </svg>
+                    <div>
+                        <h3 class="font-semibold text-green-900">Subtitles Generated Successfully!</h3>
+                        <p class="text-sm text-green-700 mt-1">Your SRT file is ready. Review the subtitles or download them now.</p>
+                    </div>
+                </div>
+
+                <div class="space-y-6">
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                        <div>
+                            <h2 class="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                                <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
+                                </svg>
+                                Subtitle Preview
+                            </h2>
+                            <p class="text-slate-600 mt-2">Review the AI-generated subtitles below.</p>
+                        </div>
+                        <div class="flex flex-col sm:flex-row gap-3">
+                            <button id="download-button" class="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:shadow-xl hover:from-blue-700 hover:to-blue-800 transition-smooth transform hover:scale-105 flex items-center justify-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                </svg>
+                                Download .srt File
+                            </button>
+                            <button id="start-over-button" class="w-full sm:w-auto bg-slate-200 text-slate-700 font-bold py-3 px-6 rounded-lg hover:bg-slate-300 transition-smooth flex items-center justify-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                </svg>
+                                Start Over
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="space-y-6">
+                        <!--
+                        <div class="bg-gradient-to-br from-slate-50 to-slate-100 rounded-lg p-1">
+                            <div class="bg-white rounded-lg p-4">
+                                <label for="srt-preview-area" class="block font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                                    <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                                    </svg>
+                                    Formatted Preview
+                                    <span class="ml-auto text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">Preview</span>
+                                </label>
+                                <textarea id="srt-preview-area" readonly class="srt-preview w-full h-60 bg-slate-900 text-slate-200 font-mono text-sm p-4 rounded-lg border border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-smooth"></textarea>
+                            </div>
+                        </div>
+                        -->
+
+                        <div class="bg-gradient-to-br from-slate-50 to-slate-100 rounded-lg p-1">
+                            <div class="bg-white rounded-lg p-4">
+                                <label for="raw-srt-area" class="block font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                                    <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+                                    </svg>
+                                    Raw Gemini Output
+                                    <span class="ml-auto text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full">Original</span>
+                                </label>
+                                <textarea id="raw-srt-area" readonly class="srt-preview w-full h-60 bg-slate-900 text-slate-200 font-mono text-sm p-4 rounded-lg border border-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-smooth"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <section class="mt-8">
+                <div class="bg-gradient-to-br from-slate-50 to-slate-100 rounded-lg p-1">
+                    <div class="bg-white rounded-lg p-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-xl font-semibold text-slate-900 flex items-center gap-2">
+                                <svg class="w-6 h-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                </svg>
+                                Processing Logs
+                            </h2>
+                            <span class="text-xs bg-slate-100 text-slate-600 px-3 py-1 rounded-full flex items-center gap-2">
+                                <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                                Live Updates
+                            </span>
+                        </div>
+                        <div class="rounded-lg border-2 border-slate-200 bg-slate-950 p-4 shadow-inner">
+                            <pre id="log-output" class="h-64 overflow-y-auto whitespace-pre-wrap text-sm text-slate-100 font-mono"></pre>
+                        </div>
+                        <p class="text-xs text-slate-500 mt-3 flex items-center gap-2">
+                            <svg class="w-4 h-4 text-slate-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                            </svg>
+                            Real-time status updates appear here during transcription
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const uploadView = document.getElementById('upload-view');
+        const processingView = document.getElementById('processing-view');
+        const resultView = document.getElementById('result-view');
+
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const browseButton = document.getElementById('browse-button');
+        const postUploadControls = document.getElementById('post-upload-controls');
+        const preSlider = document.getElementById('pre-words-per-line-slider');
+        const preSliderValue = document.getElementById('pre-words-per-line-value');
+        const analyzeButton = document.getElementById('analyze-button');
+        const selectedFileNameLabel = document.getElementById('selected-file-name');
+        const reselectButton = document.getElementById('reselect-button');
+
+        const previewArea = document.getElementById('srt-preview-area');
+        const rawPreviewArea = document.getElementById('raw-srt-area');
+        const downloadButton = document.getElementById('download-button');
+        const startOverButton = document.getElementById('start-over-button');
+        const promptInput = document.getElementById('prompt-input');
+        const logOutput = document.getElementById('log-output');
+
+        // --- State ---
+        let selectedFile = null;
+        let originalSrtContent = ''; // Stores the raw response from Gemini
+        let originalFilename = 'subtitles'; // Default filename
+        let parsedSrtBlocks = []; // Cached parsed representation of the original SRT
+        let logEntries = [];
+        const DEFAULT_WORD_LIMIT = 6;
+        let currentWordLimit = DEFAULT_WORD_LIMIT;
+        const TRANSCRIPTION_PLACEHOLDER = '<Transcribe the attached media to obtain the raw transcript>';
+
+        const apiBase = resolveApiBase();
+
+        // --- MOCK API RESPONSE ---
+        // In a real app, this would come from your backend after calling the Gemini API
+        function getMockGeminiResponse() {
+            // This is a high-quality, naturally-paced SRT string, just as Gemini would return.
+            return `1
+00:00:01,500 --> 00:00:04,200
+This is an excellent idea!
+
+2
+00:00:04,800 --> 00:00:08,500
+Using an AI like Gemini to analyze both the video and the audio...
+
+3
+00:00:08,500 --> 00:00:11,800
+...is a really smart approach. This could lead to much higher quality subtitles.
+
+4
+00:00:12,500 --> 00:00:15,000
+I'm particularly interested in the "intelligence" you mentioned.
+
+5
+00:00:15,500 --> 00:00:20,800
+You want the subtitle timing to feel natural, reflecting the speaker's actual pace and pauses...
+
+6
+00:00:21,000 --> 00:00:25,300
+...rather than just mechanically splitting lines based on a fixed word count.
+
+7
+00:00:25,800 --> 00:00:27,000
+That's a fantastic feature.
+`;
+        }
+        
+        // --- Core "Intelligence" Logic (Client-Side) ---
+
+        function resetLogs() {
+            logEntries = [];
+            renderLogs();
+        }
+
+        function addLog(message) {
+            if (!message) return;
+            const timestamp = new Date().toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            logEntries.push(`[${timestamp}] ${message}`);
+            renderLogs();
+        }
+
+        function renderLogs() {
+            if (!logOutput) return;
+            logOutput.textContent = logEntries.length
+                ? logEntries.join('\n')
+                : 'Logs will appear here as the transcription runs.';
+            logOutput.scrollTop = logOutput.scrollHeight;
+        }
+
+        /**
+         * Parses a raw SRT string into an array of subtitle objects.
+         * @param {string} srtText - The raw SRT content.
+         * @returns {Array<Object>} An array of subtitle blocks.
+         */
+        function parseSRT(srtText) {
+            const normalized = (srtText || '')
+                .replace(/```\s*srt/gi, '')
+                .replace(/```/g, '')
+                .replace(/\r\n/g, '\n')
+                .trim();
+
+            if (!normalized) return [];
+
+            const lines = normalized.split('\n');
+            const blocks = [];
+            const timeRegex = /(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})/;
+            let i = 0;
+            let autoIndex = 1;
+
+            const nextNonEmpty = () => {
+                while (i < lines.length && !lines[i].trim()) {
+                    i += 1;
+                }
+            };
+
+            while (i < lines.length) {
+                nextNonEmpty();
+                if (i >= lines.length) break;
+
+                let index = null;
+                let timeLine = lines[i].trim();
+
+                if (/^\d+$/.test(timeLine) && i + 1 < lines.length && timeRegex.test(lines[i + 1])) {
+                    index = parseInt(timeLine, 10);
+                    i += 1;
+                    timeLine = lines[i].trim();
+                } else if (timeRegex.test(timeLine)) {
+                    index = autoIndex;
+                } else {
+                    i += 1;
+                    continue;
+                }
+
+                const match = timeLine.match(timeRegex);
+                if (!match) {
+                    i += 1;
+                    continue;
+                }
+
+                const [, rawStart, rawEnd] = match;
+                const startMs = timecodeToMilliseconds(rawStart);
+                const endMs = timecodeToMilliseconds(rawEnd);
+                i += 1;
+
+                const textLines = [];
+                while (i < lines.length && lines[i].trim()) {
+                    textLines.push(lines[i].trim());
+                    i += 1;
+                }
+
+                const text = textLines.join(' ').replace(/\s+/g, ' ').trim();
+                if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || !text) {
+                    autoIndex = index + 1;
+                    continue;
+                }
+
+                blocks.push({ index, startMs, endMs, text });
+                autoIndex = index + 1;
+            }
+
+            return blocks;
+        }
+
+        /**
+         * Converts an SRT string so that each subtitle entry has a single line of dialogue text.
+         * @param {string} srtText
+         * @returns {string}
+         */
+        function normalizeSrtToSingleLine(srtText) {
+            const blocks = parseSRT(stripCodeFences(srtText));
+            if (!blocks.length) {
+                return stripCodeFences(srtText).replace(/\r\n/g, '\n').trim();
+            }
+
+            const normalized = blocks
+                .map((block, idx) => {
+                    const caption = block.text.replace(/\s+/g, ' ').trim();
+                    if (!caption) return null;
+                    const index = idx + 1;
+                    const start = millisecondsToTimecode(block.startMs);
+                    const end = millisecondsToTimecode(block.endMs);
+                    return `${index}\n${start} --> ${end}\n${caption}`;
+                })
+                .filter(Boolean);
+
+            return normalized.join('\n\n');
+        }
+
+        function generateStructuredPrompt(wordLimit = DEFAULT_WORD_LIMIT, extraInstructions = '') {
+            const effectiveLimit = Math.max(3, Math.min(20, Number(wordLimit) || DEFAULT_WORD_LIMIT));
+            let prompt = `You are an AI assistant specialized in generating professional-quality subtitle files (SRT) from video or audio transcriptions.
+
+Input: 
+
+- The raw transcription text extracted from a video/audio file.
+- The preferred word limit per subtitle line (a number).
+- Instructions to automatically break lines at punctuation marks (.,?,,) regardless of word limit.
+- Instructions to intelligently adjust line lengths so that if a phrase exceeds or falls short of the word limit by a small margin, the adjustment is applied only to that phrase to maintain readability and natural flow.
+
+Task:  
+
+Format the transcription into a valid SRT subtitle format, including:
+
+- Subtitle sequence numbers.
+- Start and end timestamps for each subtitle (based on original transcription timing if available, or approximate reasonable splitting).
+- Subtitle text formatted according to the word limit and punctuation-based line breaks described.
+- Ensure the SRT file is clean, readable, and professional for use in video players.
+- Each subtitle entry must contain exactly one line of dialogue text with no internal line breaks.
+
+---
+
+Transcription Text: """${TRANSCRIPTION_PLACEHOLDER}"""
+
+Word limit per line: ${effectiveLimit}
+
+Please generate the formatted SRT file text accordingly.`;
+
+            const trimmedExtras = (extraInstructions || '').trim();
+            if (trimmedExtras) {
+                prompt += `\n\nAdditional user instructions:\n${trimmedExtras}`;
+            }
+
+            return prompt;
+        }
+
+        /**
+         * Takes the parsed subtitle blocks and produces a freshly segmented SRT string.
+         * @param {Array<Object>} srtBlocks - Parsed SRT objects.
+         * @param {number} wordsPerLine - Preferred words per line.
+         * @returns {string}
+         */
+        function formatSRT(srtBlocks, wordsPerLine) {
+            const recomputedBlocks = resegmentSrtBlocks(srtBlocks, wordsPerLine);
+            return recomputedBlocks
+                .map((block, idx) => {
+                    const index = idx + 1;
+                    const start = millisecondsToTimecode(block.startMs);
+                    const end = millisecondsToTimecode(block.endMs);
+                    const text = block.lines.join('\n');
+                    return `${index}\n${start} --> ${end}\n${text}`;
+                })
+                .join('\n\n');
+        }
+
+        /**
+         * Resegments SRT blocks into new caption entries while preserving original timing proportions.
+         * @param {Array<Object>} srtBlocks
+         * @param {number} wordsPerLine
+         * @returns {Array<Object>} Array of { startMs, endMs, lines }
+         */
+        function resegmentSrtBlocks(srtBlocks, wordsPerLine) {
+            const preferredWords = Math.max(3, Math.min(20, wordsPerLine));
+            const results = [];
+
+            console.log('resegmentSrtBlocks called with wordsPerLine:', wordsPerLine, 'preferredWords:', preferredWords);
+
+            srtBlocks.forEach(block => {
+                const words = block.text.split(' ').filter(Boolean);
+                if (words.length === 0) return;
+
+                const totalDuration = Math.max(block.endMs - block.startMs, 500);
+                const perWordDuration = totalDuration / Math.max(words.length, 1);
+
+                // Split text into segments based on preferred words per line (single-line captions)
+                const segments = chunkWords(words, preferredWords);
+                let cursorStart = block.startMs;
+
+                segments.forEach((segmentWords, index) => {
+                    const segmentIsLast = index === segments.length - 1;
+                    const allocatedDuration = segmentIsLast
+                        ? block.endMs - cursorStart
+                        : Math.round(segmentWords.length * perWordDuration);
+                    const startMs = cursorStart;
+                    const endMs = segmentIsLast
+                        ? block.endMs
+                        : Math.min(block.endMs, cursorStart + Math.max(allocatedDuration, 350));
+
+                    // Force a single line per caption
+                    const lines = [segmentWords.join(' ')];
+
+                    console.log('Created caption with', lines.length, 'lines, words per line:', lines.map(l => l.split(' ').length));
+
+                    results.push({ startMs, endMs, lines });
+                    cursorStart = endMs;
+                });
+            });
+
+            console.log('resegmentSrtBlocks produced', results.length, 'captions');
+            return compactOverlaps(results);
+        }
+
+        /**
+         * Splits an array of words into sub-arrays of up to maxWords items.
+         * @param {string[]} words
+         * @param {number} maxWords
+         * @returns {string[][]}
+         */
+        function chunkWords(words, maxWords) {
+            const size = Math.max(1, Math.floor(maxWords));
+            const chunks = [];
+            for (let i = 0; i < words.length; i += size) {
+                chunks.push(words.slice(i, i + size));
+            }
+            return chunks;
+        }
+
+        /**
+         * Ensures the resulting captions have strictly increasing timestamps.
+         * @param {Array<Object>} blocks
+         * @returns {Array<Object>}
+         */
+        function compactOverlaps(blocks) {
+            if (!blocks.length) return blocks;
+
+            const adjusted = [];
+            let previousEnd = Math.max(0, blocks[0].startMs - 1);
+
+            blocks.forEach(block => {
+                let startMs = Math.max(block.startMs, previousEnd + 1);
+                let endMs = Math.max(block.endMs, startMs + 200);
+                adjusted.push({ ...block, startMs, endMs });
+                previousEnd = endMs;
+            });
+
+            return adjusted;
+        }
+
+        function timecodeToMilliseconds(timecode) {
+            const match = timecode.match(/(\d{2}):(\d{2}):(\d{2}),(\d{3})/);
+            if (!match) return NaN;
+
+            const [, hh, mm, ss, ms] = match;
+            return (
+                parseInt(hh, 10) * 3600000 +
+                parseInt(mm, 10) * 60000 +
+                parseInt(ss, 10) * 1000 +
+                parseInt(ms, 10)
+            );
+        }
+
+        function millisecondsToTimecode(ms) {
+            const clamped = Math.max(0, Math.round(ms));
+            const hours = Math.floor(clamped / 3600000);
+            const minutes = Math.floor((clamped % 3600000) / 60000);
+            const seconds = Math.floor((clamped % 60000) / 1000);
+            const milliseconds = clamped % 1000;
+
+            return [hours, minutes, seconds]
+                .map(unit => unit.toString().padStart(2, '0'))
+                .join(':') + `,${milliseconds.toString().padStart(3, '0')}`;
+        }
+
+        // --- Main App Flow ---
+
+        function prepareFileForAnalysis(file) {
+            if (!file) return;
+
+            selectedFile = file;
+            originalFilename = file.name.split('.').slice(0, -1).join('.') || 'subtitles';
+            if (preSlider) {
+                currentWordLimit = parseInt(preSlider.value, 10) || DEFAULT_WORD_LIMIT;
+            }
+
+            if (selectedFileNameLabel) {
+                selectedFileNameLabel.textContent = file.name || 'audio';
+            }
+
+            if (postUploadControls) {
+                postUploadControls.classList.remove('hidden');
+            }
+
+            if (analyzeButton) {
+                analyzeButton.disabled = false;
+            }
+
+            if (preSlider && preSliderValue) {
+                const preset = parseInt(preSlider.value, 10) || DEFAULT_WORD_LIMIT;
+                preSliderValue.textContent = preset;
+            }
+
+            addLog(`Ready to analyze "${file.name || 'audio'}". Adjust settings and press Analyze.`);
+        }
+
+        async function handleFileUpload(file, selectedWordLimit) {
+            if (!file) return;
+
+            originalFilename = file.name.split('.').slice(0, -1).join('.') || 'subtitles';
+
+            if (analyzeButton) {
+                analyzeButton.disabled = true;
+            }
+
+            resetLogs();
+            addLog(`Selected file "${file.name || 'audio'}"`);
+            
+            // 1. Show processing view
+            uploadView.classList.add('hidden');
+            resultView.classList.add('hidden');
+            processingView.classList.remove('hidden');
+
+            try {
+                const wordLimit = Number.isFinite(selectedWordLimit)
+                    ? Math.max(3, Math.min(20, selectedWordLimit))
+                    : DEFAULT_WORD_LIMIT;
+                currentWordLimit = wordLimit;
+                const userInstructions = (promptInput?.value || '').trim();
+                const structuredPrompt = generateStructuredPrompt(wordLimit, userInstructions);
+                addLog(`Preparing transcription request (word limit: ${wordLimit}).`);
+                addLog('Uploading media to the server...');
+                originalSrtContent = stripCodeFences(await callTranscriptionApi(file, structuredPrompt, wordLimit, addLog));
+                originalSrtContent = normalizeSrtToSingleLine(originalSrtContent);
+                addLog('Gemini returned transcription data.');
+                showResultView();
+                addLog('Rendering subtitles preview.');
+            } catch (error) {
+                console.error('Transcription failed:', error);
+                addLog(`Transcription failed: ${error.message || 'Unknown error'}`);
+                alert('Unable to generate subtitles right now. Showing demo output instead.');
+                originalSrtContent = stripCodeFences(getMockGeminiResponse());
+                originalSrtContent = normalizeSrtToSingleLine(originalSrtContent);
+                addLog('Loaded demo subtitles for preview.');
+                showResultView();
+            }
+        }
+
+        function showResultView() {
+            // Set the slider to the default and update the preview
+            const defaultWords = currentWordLimit;
+            const previewAvailable = Boolean(previewArea);
+            addLog('Parsing Gemini response into subtitle blocks...');
+            parsedSrtBlocks = parseSRT(originalSrtContent);
+
+            if (rawPreviewArea) {
+                rawPreviewArea.value = originalSrtContent || 'No transcription text received.';
+                addLog(`Raw SRT loaded (${originalSrtContent?.length || 0} characters).`);
+            }
+
+            if (!parsedSrtBlocks.length) {
+                if (previewAvailable) {
+                    previewArea.value = originalSrtContent || 'Unable to parse subtitle response.';
+                }
+                addLog('⚠️ Parsing produced no caption blocks. Displaying raw SRT output only.');
+                if (preSlider) {
+                    preSlider.disabled = true;
+                }
+                if (preSliderValue) {
+                    preSliderValue.textContent = defaultWords;
+                }
+            } else {
+                addLog(`✓ Successfully parsed ${parsedSrtBlocks.length} subtitle blocks.`);
+                if (preSlider) {
+                    preSlider.disabled = false;
+                }
+                if (previewAvailable) {
+                    updatePreview(defaultWords);
+                    addLog(`Formatted preview prepared with ${defaultWords} words per line.`);
+                } else {
+                    addLog(`Formatted preview prepared with ${defaultWords} words per line (view hidden).`);
+                }
+            }
+
+            // Show the view
+            processingView.classList.add('hidden');
+            uploadView.classList.add('hidden');
+            resultView.classList.remove('hidden');
+            addLog('✓ Result view displayed. Ready for review and download.');
+        }
+
+        function showUploadView() {
+            processingView.classList.add('hidden');
+            resultView.classList.add('hidden');
+            uploadView.classList.remove('hidden');
+            
+            // Reset state
+            selectedFile = null;
+            originalSrtContent = '';
+            fileInput.value = ''; // Clear the file input
+            if (preSlider) {
+                preSlider.value = DEFAULT_WORD_LIMIT;
+                preSlider.disabled = false;
+            }
+            if (preSliderValue) {
+                preSliderValue.textContent = DEFAULT_WORD_LIMIT;
+            }
+            parsedSrtBlocks = [];
+            if (promptInput) {
+                promptInput.value = '';
+            }
+            resetLogs();
+            if (rawPreviewArea) {
+                rawPreviewArea.value = '';
+            }
+            if (previewArea) {
+                previewArea.value = '';
+            }
+            if (postUploadControls) {
+                postUploadControls.classList.add('hidden');
+            }
+            if (selectedFileNameLabel) {
+                selectedFileNameLabel.textContent = 'No file chosen';
+            }
+            currentWordLimit = DEFAULT_WORD_LIMIT;
+            if (analyzeButton) {
+                analyzeButton.disabled = true;
+            }
+        }
+
+        /**
+         * The core function called by the slider.
+         * It re-parses and re-formats the SRT content in real-time.
+         */
+        function updatePreview(wordsPerLine) {
+            console.log('updatePreview called with:', wordsPerLine);
+            if (!originalSrtContent) {
+                console.log('No original content, skipping update');
+                return;
+            }
+            
+            // 1. Parse the original, raw SRT content
+            if (!parsedSrtBlocks.length) {
+                console.log('Parsing SRT blocks...');
+                parsedSrtBlocks = parseSRT(originalSrtContent);
+            }
+
+            console.log('Formatting with', parsedSrtBlocks.length, 'blocks');
+            const newSrtText = formatSRT(parsedSrtBlocks, wordsPerLine);
+            
+            // 3. Update the UI
+            if (previewArea) {
+                previewArea.value = newSrtText;
+                console.log('Preview updated successfully');
+            } else {
+                console.log('Preview area not present; skipping formatted preview rendering.');
+            }
+            if (preSliderValue) {
+                preSliderValue.textContent = wordsPerLine;
+            }
+        }
+
+        function resolveApiBase() {
+            if (window.SRT_API_BASE) return window.SRT_API_BASE.replace(/\/$/, '');
+            const origin = window.location.origin;
+            if (origin && origin.startsWith('http')) {
+                return origin;
+            }
+            return 'http://localhost:8787';
+        }
+
+        function stripCodeFences(text = '') {
+            return (text || '')
+                .replace(/```\s*srt/gi, '')
+                .replace(/```/g, '')
+                .replace(/\r\n/g, '\n');
+        }
+
+        async function callTranscriptionApi(file, prompt, wordLimit, onProgress = () => {}) {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('prompt', prompt);
+            formData.append('wordLimit', String(wordLimit));
+
+            onProgress('Contacting transcription service...');
+            const response = await fetch(`${apiBase}/api/transcribe`, {
+                method: 'POST',
+                body: formData
+            });
+
+            onProgress('Upload complete. Awaiting Gemini response...');
+            if (!response.ok) {
+                onProgress('Transcription service responded with an error.');
+                const errorPayload = await tryParseJson(response).catch(() => undefined);
+                const fallback = errorPayload?.error || errorPayload?.message || await response.text();
+                throw new Error(fallback || 'Transcription service error');
+            }
+
+            onProgress('Processing response...');
+            const json = await tryParseJson(response).catch(() => undefined);
+            if (json?.srt) {
+                onProgress('Gemini transcription parsed successfully.');
+                return json.srt;
+            }
+
+            const text = await response.text();
+            if (text.trim()) {
+                onProgress('Received plain text transcription from Gemini.');
+                return text;
+            }
+
+            onProgress('No transcription data received.');
+            throw new Error('Empty transcription response');
+        }
+
+        async function tryParseJson(response) {
+            try {
+                return await response.clone().json();
+            } catch (error) {
+                return Promise.reject(error);
+            }
+        }
+
+        function downloadSRT() {
+            const srtContent = (previewArea && previewArea.value) || rawPreviewArea.value;
+            const blob = new Blob([srtContent], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${originalFilename}.srt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // --- Event Listeners ---
+        if (preSlider) {
+            preSlider.addEventListener('input', (e) => {
+                const words = parseInt(e.target.value, 10) || DEFAULT_WORD_LIMIT;
+                currentWordLimit = words;
+                if (preSliderValue) {
+                    preSliderValue.textContent = words;
+                }
+                if (!resultView.classList.contains('hidden')) {
+                    addLog(`Adjusting preview to ${words} words per line...`);
+                    updatePreview(words);
+                }
+            });
+        }
+
+        // Download Button
+        downloadButton.addEventListener('click', downloadSRT);
+
+        // Start Over Button
+        startOverButton.addEventListener('click', showUploadView);
+
+        // File Browse Button
+        browseButton.addEventListener('click', () => {
+            fileInput.click();
+        });
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                prepareFileForAnalysis(e.target.files[0]);
+            }
+        });
+
+        if (reselectButton) {
+            reselectButton.addEventListener('click', () => {
+                fileInput.value = '';
+                fileInput.click();
+            });
+        }
+
+        if (analyzeButton) {
+            analyzeButton.addEventListener('click', () => {
+                if (!selectedFile) return;
+                const words = parseInt(preSlider?.value ?? String(DEFAULT_WORD_LIMIT), 10) || DEFAULT_WORD_LIMIT;
+                handleFileUpload(selectedFile, words);
+            });
+        }
+
+        // Drag and Drop
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-over');
+        });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            if (e.dataTransfer.files.length > 0) {
+                fileInput.files = e.dataTransfer.files; // Assign files to input
+                prepareFileForAnalysis(e.dataTransfer.files[0]);
+            }
+        });
+        // Also make the whole drop zone clickable
+        dropZone.addEventListener('click', (e) => {
+            if (e.target.id === 'drop-zone' || e.target.tagName === 'P' || e.target.tagName === 'svg' || e.target.tagName === 'path') {
+                fileInput.click();
+            }
+        });
+
+        renderLogs();
+
+    </script>
+</body>
+</html>
