@@ -9,6 +9,7 @@ import crypto from 'crypto';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
 
 // --- NEW SDK IMPORT ---
 import { GoogleGenAI } from '@google/genai';
@@ -44,10 +45,23 @@ if (!GEMINI_API_KEY) {
 // 1. Initialize Google GenAI Client
 const aiClient = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
-// 2. Setup FFmpeg
-let ffmpegPath = ffmpegStatic || 'ffmpeg';
+// 2. Setup FFmpeg (try static first, fallback to system)
+let ffmpegPath = ffmpegStatic;
+if (!ffmpegPath) {
+    ffmpegPath = 'ffmpeg'; // Use system FFmpeg
+    console.log('[Setup] Using system FFmpeg');
+} else {
+    console.log(`[Setup] Using bundled FFmpeg: ${ffmpegPath}`);
+}
 ffmpeg.setFfmpegPath(ffmpegPath);
-console.log(`[Setup] FFmpeg Path: ${ffmpegPath}`);
+
+// Test FFmpeg availability
+try {
+    execSync(`"${ffmpegPath}" -version`, { stdio: 'ignore' });
+    console.log('[Setup] FFmpeg is working ✓');
+} catch (e) {
+    console.error('[WARNING] FFmpeg not found! Install it with: apt install ffmpeg');
+}
 
 // 3. Express App & Middleware
 const app = express();
