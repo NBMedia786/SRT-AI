@@ -1,0 +1,1285 @@
+import dotenv from 'dotenv';
+import express from 'express';
+import cors from 'cors';
+import multer from 'multer';
+import os from 'os';
+import path from 'path';
+import fs from 'fs';
+import { promises as fsPromises } from 'fs';
+import crypto from 'crypto';
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegStatic from 'ffmpeg-static';
+import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
+
+// --- NEW SDK IMPORT ---
+import { GoogleGenAI } from '@google/genai';
+import { HfInference } from '@huggingface/inference';
+
+// Load environment variables
+dotenv.config();
+
+console.log('--- SERVER STARTING (Gemini 2.x Architecture) ---');
+
+// ═══════════════════════════════════════════════════════════
+//   CONFIGURATION
+// ═══════════════════════════════════════════════════════════
+
+const PORT = parseInt(process.env.PORT) || 3000;
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const isProduction = NODE_ENV === 'production';
+
+// Default to Gemini 2.5 Pro (User requested)
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-pro';
+console.log('[DEBUG] GEMINI_MODEL from env:', process.env.GEMINI_MODEL);
+console.log('[DEBUG] GEMINI_MODEL final value:', GEMINI_MODEL);
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+
+// Production Configuration
+const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS) || 30 * 60 * 1000; // 30 minutes
+const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE_MB) * 1024 * 1024 || 2 * 1024 * 1024 * 1024; // 2GB
+const RATE_LIMIT_REQUESTS = parseInt(process.env.RATE_LIMIT_REQUESTS) || 10; // per hour
+const LOG_LEVEL = process.env.LOG_LEVEL || (isProduction ? 'info' : 'debug');
+
+// Supported file formats
+const SUPPORTED_AUDIO_FORMATS = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/wave', 'audio/m4a', 'audio/x-m4a', 'audio/flac', 'audio/ogg'];
+const SUPPORTED_VIDEO_FORMATS = ['video/mp4', 'video/mpeg', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska'];
+const SUPPORTED_FORMATS = [...SUPPORTED_AUDIO_FORMATS, ...SUPPORTED_VIDEO_FORMATS];
+
+// Validate API Key
+if (!GEMINI_API_KEY) {
+    console.error('\n[FATAL ERROR] GEMINI_API_KEY is missing.');
+    console.error('Please add it to your .env file.\n');
+    process.exit(1);
+}
+
+// ═══════════════════════════════════════════════════════════
+//   SETUP & INITIALIZATION
+// ═══════════════════════════════════════════════════════════
+
+// 1. Initialize Google GenAI Client
+const aiClient = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+
+// 2. Initialize Hugging Face Client (Whisper Fallback)
+const HUGGINGFACE_API_KEY = process.env.HUGGINGFACE_API_KEY;
+const ENABLE_WHISPER_FALLBACK = process.env.ENABLE_WHISPER_FALLBACK !== 'false';
+const hfClient = HUGGINGFACE_API_KEY ? new HfInference(HUGGINGFACE_API_KEY) : null;
+
+if (ENABLE_WHISPER_FALLBACK && !hfClient) {
+    console.warn('[WARNING] Whisper fallback is enabled but HUGGINGFACE_API_KEY is missing.');
+    console.warn('Blocked content will not have a fallback option.');
+}
+
+// 3. Setup FFmpeg (try static first, fallback to system)
+let ffmpegPath = ffmpegStatic;
+if (!ffmpegPath) {
+    ffmpegPath = 'ffmpeg'; // Use system FFmpeg
+    console.log('[Setup] Using system FFmpeg');
+} else {
+    console.log(`[Setup] Using bundled FFmpeg: ${ffmpegPath}`);
+}
+ffmpeg.setFfmpegPath(ffmpegPath);
+
+// Test FFmpeg availability
+try {
+    execSync(`"${ffmpegPath}" -version`, { stdio: 'ignore' });
+    console.log('[Setup] FFmpeg is working ✓');
+} catch (e) {
+    console.error('[WARNING] FFmpeg not found! Install it with: apt install ffmpeg');
+}
+
+// 3. Express App & Middleware
+const app = express();
+
+if (isProduction) {
+    app.set('trust proxy', 1);
+}
+
+app.use(cors({
+    origin: true,
+    credentials: true
+}));
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Keep-alive for long uploads
+app.use((req, res, next) => {
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Keep-Alive', 'timeout=1800');
+    next();
+});
+
+// Request logging middleware
+app.use((req, res, next) => {
+    const start = Date.now();
+    const requestId = crypto.randomUUID().substring(0, 8);
+    req.requestId = requestId;
+
+    log('info', `[${requestId}] ${req.method} ${req.path}`, {
+        ip: req.ip,
+        userAgent: req.get('user-agent')?.substring(0, 100)
+    });
+
+    res.on('finish', () => {
+        const duration = Date.now() - start;
+        log('info', `[${requestId}] ${res.statusCode} ${duration}ms`);
+    });
+
+    next();
+});
+
+// Request timeout middleware
+app.use((req, res, next) => {
+    req.setTimeout(REQUEST_TIMEOUT_MS, () => {
+        log('error', `Request timeout after ${REQUEST_TIMEOUT_MS}ms`, { path: req.path });
+        if (!res.headersSent) {
+            res.status(408).json({
+                error: 'Request timeout',
+                message: 'Processing took too long. Please try with a shorter file or reduce quality.',
+                timeout: REQUEST_TIMEOUT_MS
+            });
+        }
+    });
+    next();
+});
+
+// 4. Static Files (Frontend)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const staticRoot = process.env.STATIC_ROOT || __dirname;
+app.use(express.static(staticRoot));
+
+// 5. Upload Configuration (Supports 1+ hour files)
+const upload = multer({
+    storage: multer.diskStorage({
+        destination: (req, file, cb) => {
+            const tmpDir = os.tmpdir();
+            // Ensure temp directory exists and is writable
+            try {
+                if (!fs.existsSync(tmpDir)) {
+                    fs.mkdirSync(tmpDir, { recursive: true });
+                }
+                cb(null, tmpDir);
+            } catch (err) {
+                log('error', 'Failed to access temp directory', { error: err.message });
+                cb(new Error('Server storage error. Please try again.'));
+            }
+        },
+        filename: (req, file, cb) => {
+            const ext = path.extname(file.originalname) || '.bin';
+            const safeName = `srt-ai-${crypto.randomUUID()}${ext}`;
+            cb(null, safeName);
+        }
+    }),
+    limits: {
+        fileSize: MAX_FILE_SIZE,
+        files: 1,
+        fields: 10,
+        parts: 20
+    },
+    fileFilter: (req, file, cb) => {
+        // Basic MIME type check (will do deeper validation later)
+        if (SUPPORTED_FORMATS.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error(`Unsupported file format: ${file.mimetype}. Supported formats: MP4, MP3, WAV, MOV, AVI, M4A, FLAC, OGG`));
+        }
+    }
+});
+
+// Rate limiting store
+const rateLimitStore = new Map();
+
+function checkRateLimit(ip) {
+    const now = Date.now();
+    const hourAgo = now - 60 * 60 * 1000;
+
+    if (!rateLimitStore.has(ip)) {
+        rateLimitStore.set(ip, []);
+    }
+
+    const requests = rateLimitStore.get(ip).filter(time => time > hourAgo);
+
+    if (requests.length >= RATE_LIMIT_REQUESTS) {
+        return false;
+    }
+
+    requests.push(now);
+    rateLimitStore.set(ip, requests);
+    return true;
+}
+
+// Clean up rate limit store every hour
+setInterval(() => {
+    const hourAgo = Date.now() - 60 * 60 * 1000;
+    for (const [ip, requests] of rateLimitStore.entries()) {
+        const filtered = requests.filter(time => time > hourAgo);
+        if (filtered.length === 0) {
+            rateLimitStore.delete(ip);
+        } else {
+            rateLimitStore.set(ip, filtered);
+        }
+    }
+}, 60 * 60 * 1000);
+
+// ═══════════════════════════════════════════════════════════
+//   LOGGING SYSTEM
+// ═══════════════════════════════════════════════════════════
+
+const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
+const currentLogLevel = LOG_LEVELS[LOG_LEVEL] || LOG_LEVELS.info;
+
+function log(level, message, metadata = {}) {
+    if (LOG_LEVELS[level] < currentLogLevel) return;
+
+    const timestamp = new Date().toISOString();
+    const metaStr = Object.keys(metadata).length > 0 ? ` ${JSON.stringify(metadata)}` : '';
+    console.log(`[${timestamp}] [${level.toUpperCase()}] ${message}${metaStr}`);
+}
+
+// ═══════════════════════════════════════════════════════════
+//   PROGRESS TRACKING SYSTEM
+// ═══════════════════════════════════════════════════════════
+
+// Store active jobs and their progress
+const activeJobs = new Map();
+
+// SSE clients for progress updates
+const progressClients = new Map();
+
+function updateProgress(jobId, stage, percent, message) {
+    const progress = { stage, percent, message, timestamp: Date.now() };
+    activeJobs.set(jobId, progress);
+
+    // Send to connected SSE clients
+    const client = progressClients.get(jobId);
+    if (client) {
+        client.write(`data: ${JSON.stringify(progress)}\n\n`);
+    }
+
+    log('debug', `[Progress] ${jobId.substring(0, 8)}... | ${stage} | ${percent}% | ${message}`);
+}
+
+// ═══════════════════════════════════════════════════════════
+//   API ROUTES
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Health Check
+ */
+app.get('/api/health', async (req, res) => {
+    const health = {
+        status: 'online',
+        system: 'Gemini 2.x Architecture',
+        model: GEMINI_MODEL,
+        time: new Date().toISOString(),
+        version: '2.0.0',
+        environment: NODE_ENV,
+        checks: {}
+    };
+
+    // Check FFmpeg
+    try {
+        execSync(`"${ffmpegPath}" -version`, { stdio: 'ignore' });
+        health.checks.ffmpeg = 'ok';
+    } catch (e) {
+        health.checks.ffmpeg = 'error';
+        health.status = 'degraded';
+    }
+
+    // Check Gemini API
+    try {
+        await aiClient.models.list();
+        health.checks.geminiApi = 'ok';
+    } catch (e) {
+        health.checks.geminiApi = 'error';
+        health.status = 'degraded';
+        log('error', 'Gemini API health check failed', { error: e.message });
+    }
+
+    // System resources
+    health.system = {
+        platform: os.platform(),
+        nodeVersion: process.version,
+        memory: {
+            total: Math.round(os.totalmem() / 1024 / 1024) + 'MB',
+            free: Math.round(os.freemem() / 1024 / 1024) + 'MB',
+            used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB'
+        },
+        uptime: Math.round(process.uptime()) + 's'
+    };
+
+    res.json(health);
+});
+
+/**
+ * Progress Stream (SSE)
+ */
+app.get('/api/progress/:jobId', (req, res) => {
+    const { jobId } = req.params;
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+
+    // Send initial connection message
+    res.write(`data: ${JSON.stringify({ stage: 'connected', percent: 0, message: 'Connected to progress stream' })}\n\n`);
+
+    // Store this client
+    progressClients.set(jobId, res);
+
+    // Send current progress if job already started
+    if (activeJobs.has(jobId)) {
+        res.write(`data: ${JSON.stringify(activeJobs.get(jobId))}\n\n`);
+    }
+
+    // Cleanup on disconnect
+    req.on('close', () => {
+        progressClients.delete(jobId);
+    });
+});
+
+/**
+ * Main Transcription Endpoint
+ */
+// Upload error handling middleware
+app.use('/api/transcribe', (err, req, res, next) => {
+    if (err instanceof multer.MulterError) {
+        log('warn', 'Multer upload error', { error: err.message, code: err.code });
+
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({
+                error: 'file_too_large',
+                message: `File size exceeds the maximum limit of ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB. Please compress or split your file.`,
+                maxSize: MAX_FILE_SIZE
+            });
+        }
+
+        if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+            return res.status(400).json({
+                error: 'invalid_upload',
+                message: 'Invalid file upload. Please upload only one file at a time.'
+            });
+        }
+
+        return res.status(400).json({
+            error: 'upload_error',
+            message: `Upload failed: ${err.message}. Please try again.`,
+            code: err.code
+        });
+    }
+
+    if (err) {
+        log('error', 'Upload error', { error: err.message });
+        return res.status(500).json({
+            error: 'upload_failed',
+            message: err.message || 'File upload failed. Please try again.'
+        });
+    }
+
+    next();
+});
+
+app.post('/api/transcribe', upload.single('file'), async (req, res) => {
+    const jobId = req.body.jobId || crypto.randomUUID();
+    const startTime = Date.now();
+    const cleanupPaths = [];
+    let geminiFileName = null;
+
+    try {
+        // 1. Rate Limiting
+        const clientIp = req.ip;
+        if (!checkRateLimit(clientIp)) {
+            log('warn', 'Rate limit exceeded', { ip: clientIp, jobId });
+            return res.status(429).json({
+                error: 'Rate limit exceeded',
+                message: `Too many requests. Maximum ${RATE_LIMIT_REQUESTS} requests per hour allowed. Please try again later.`,
+                retryAfter: 3600
+            });
+        }
+
+        // 2. File Upload Validation
+        if (!req.file) {
+            return res.status(400).json({
+                error: 'No file uploaded',
+                message: 'Please select a file to upload.'
+            });
+        }
+
+        cleanupPaths.push(req.file.path);
+
+        log('info', `New transcription request`, {
+            jobId: jobId.substring(0, 8),
+            filename: req.file.originalname,
+            size: Math.round(req.file.size / 1024 / 1024) + 'MB',
+            mimetype: req.file.mimetype,
+            ip: clientIp
+        });
+
+        // 3. Enhanced File Validation
+        const validationError = await validateFile(req.file);
+        if (validationError) {
+            log('warn', 'File validation failed', { jobId, error: validationError });
+            return res.status(400).json({
+                error: 'Invalid file',
+                message: validationError,
+                supportedFormats: 'MP4, MP3, WAV, MOV, AVI, M4A, FLAC, OGG',
+                maxSize: '2GB'
+            });
+        }
+
+        updateProgress(jobId, 'upload', 5, 'File validated, starting processing...');
+
+        // -------------------------------------------------------
+        // STEP 1: Audio Pre-processing (Forensic Cleaning)
+        // -------------------------------------------------------
+        let audioPath = req.file.path;
+        const isWav = req.file.mimetype === 'audio/wav' || req.file.originalname.toLowerCase().endsWith('.wav');
+
+        if (!isWav) {
+            updateProgress(jobId, 'converting', 10, 'Converting audio to high-quality WAV...');
+            audioPath = await transcodeToWav(req.file.path, (percent) => {
+                // Map 0-100 FFmpeg progress to 10-40 overall progress
+                const overallPercent = 10 + Math.round(percent * 0.3);
+                updateProgress(jobId, 'converting', overallPercent, `Converting audio: ${percent.toFixed(0)}%`);
+            });
+            cleanupPaths.push(audioPath);
+        } else {
+            updateProgress(jobId, 'converting', 40, 'File is already WAV, skipping conversion');
+        }
+
+        // -------------------------------------------------------
+        // STEP 2: Upload to Google AI (New SDK)
+        // -------------------------------------------------------
+        updateProgress(jobId, 'uploading', 45, 'Uploading to Google AI Studio...');
+
+        const uploadResult = await aiClient.files.upload({
+            file: audioPath,
+            config: {
+                mimeType: 'audio/wav',
+                displayName: `SRT_Job_${Date.now()}`
+            }
+        });
+
+        geminiFileName = uploadResult.name;
+        updateProgress(jobId, 'uploading', 50, 'Upload complete, waiting for processing...');
+
+        // -------------------------------------------------------
+        // STEP 3: Wait for Processing (supports 1+ hour files)
+        // -------------------------------------------------------
+        let fileState = uploadResult.state;
+        let waitAttempts = 0;
+        const maxWaitAttempts = 180; // 30 minutes max
+
+        while (fileState === 'PROCESSING') {
+            waitAttempts++;
+            if (waitAttempts > maxWaitAttempts) {
+                throw new Error('Gemini processing timeout - file may be too long. Please try with a shorter file or split it into smaller parts.');
+            }
+
+            // Map waiting progress from 50-70%
+            const waitPercent = 50 + Math.min(20, Math.round(waitAttempts * 0.5));
+            const elapsed = waitAttempts * 10;
+            updateProgress(jobId, 'processing', waitPercent, `Gemini processing audio... (${elapsed}s elapsed)`);
+
+            await new Promise(resolve => setTimeout(resolve, 10000));
+
+            try {
+                const fileStatus = await aiClient.files.get({ name: geminiFileName });
+                fileState = fileStatus.state;
+
+                if (fileState === 'FAILED') {
+                    throw new Error('Gemini failed to process the audio file. The file may be corrupted or in an unsupported format.');
+                }
+            } catch (statusError) {
+                log('warn', 'Error checking file status', { error: statusError.message, attempt: waitAttempts });
+                // Continue waiting unless we've exceeded max attempts
+                if (waitAttempts > maxWaitAttempts) {
+                    throw new Error('Unable to verify processing status. Please try again.');
+                }
+            }
+        }
+
+        updateProgress(jobId, 'processing', 70, 'Audio processed, generating transcription...');
+
+        // -------------------------------------------------------
+        // STEP 4: Generate Subtitles (JSON-First Architecture)
+        // -------------------------------------------------------
+        updateProgress(jobId, 'transcribing', 75, `Transcribing with ${GEMINI_MODEL}...`);
+
+        const wordLimit = parseInt(req.body.wordLimit) || 6;
+        const vocabulary = req.body.vocabulary ? req.body.vocabulary.split(',').map(v => v.trim()).filter(v => v) : [];
+
+        let transcriptionAttempts = 0;
+        let response;
+
+        // Retry transcription up to 2 times on failure
+        while (transcriptionAttempts < 2) {
+            try {
+                response = await aiClient.models.generateContent({
+                    model: GEMINI_MODEL,
+                    config: {
+                        temperature: 0.0,
+                        topP: 0.95,
+                        maxOutputTokens: 65536,
+                    },
+                    contents: [
+                        {
+                            role: 'user',
+                            parts: [
+                                { text: buildEnhancedPrompt(wordLimit, vocabulary) },
+                                {
+                                    fileData: {
+                                        mimeType: 'audio/wav',
+                                        fileUri: uploadResult.uri
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                });
+                break; // Success, exit retry loop
+            } catch (genError) {
+                transcriptionAttempts++;
+                log('warn', `Transcription attempt ${transcriptionAttempts} failed`, { error: genError.message });
+
+                if (transcriptionAttempts >= 2) {
+                    throw new Error('AI transcription failed after multiple attempts. Please try again later.');
+                }
+
+                // Wait before retry
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                updateProgress(jobId, 'transcribing', 75, `Retrying transcription (attempt ${transcriptionAttempts + 1})...`);
+            }
+        }
+
+        updateProgress(jobId, 'formatting', 90, 'Formatting SRT output...');
+
+        // -------------------------------------------------------
+        // STEP 5: Convert JSON to SRT (Perfect Formatting)
+        // -------------------------------------------------------
+
+        // Debug: Check for safety blocks or empty candidates
+        if (response.promptFeedback?.blockReason) {
+            log('warn', 'Content blocked by Gemini safety filters', {
+                blockReason: response.promptFeedback.blockReason,
+                safetyRatings: response.promptFeedback.safetyRatings
+            });
+
+            // Try Whisper fallback if available
+            if (ENABLE_WHISPER_FALLBACK && hfClient) {
+                log('info', 'Attempting Whisper fallback for blocked content', { jobId: jobId.substring(0, 8) });
+
+                try {
+                    const whisperSRT = await transcribeWithWhisper(wavPath, wordLimit, jobId);
+
+                    // Success! Return the Whisper result
+                    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+                    updateProgress(jobId, 'complete', 100, `Completed via Whisper in ${duration}s`);
+
+                    const subtitleCount = (whisperSRT.match(/\n\n/g) || []).length + 1;
+                    log('info', 'Transcription completed successfully via Whisper fallback', {
+                        jobId: jobId.substring(0, 8),
+                        duration: `${duration}s`,
+                        subtitleCount
+                    });
+
+                    return res.json({
+                        success: true,
+                        srt: whisperSRT,
+                        duration: `${duration}s`,
+                        subtitleCount,
+                        usedFallback: true,
+                        fallbackReason: 'Content blocked by Gemini safety filters'
+                    });
+                } catch (whisperError) {
+                    log('error', 'Whisper fallback also failed', { error: whisperError.message });
+                    throw new Error(`Content blocked by AI safety filters and Whisper fallback failed: ${whisperError.message}`);
+                }
+            }
+
+            // No fallback available
+            throw new Error(`Content blocked by AI safety filters: ${response.promptFeedback.blockReason}. Please try a different audio file.`);
+        }
+
+        if (!response.candidates || response.candidates.length === 0) {
+            log('error', 'No candidates in response', {
+                hasPromptFeedback: !!response.promptFeedback,
+                responseKeys: Object.keys(response)
+            });
+            throw new Error('AI did not generate any response. This may be due to audio quality issues or content restrictions. Please try a different audio file.');
+        }
+
+        // Check if candidate was blocked
+        const candidate = response.candidates[0];
+        if (candidate.finishReason && candidate.finishReason !== 'STOP') {
+            log('warn', 'Generation stopped early', {
+                finishReason: candidate.finishReason,
+                safetyRatings: candidate.safetyRatings
+            });
+
+            if (candidate.finishReason === 'SAFETY') {
+                throw new Error('Content generation stopped due to safety concerns. Please try a different audio file.');
+            }
+
+            if (candidate.finishReason === 'MAX_TOKENS') {
+                log('warn', 'Transcription incomplete due to MAX_TOKENS limit', {
+                    jobId: jobId.substring(0, 8),
+                    message: 'Audio file is too long for single transcription. Output will be incomplete.'
+                });
+                // Continue processing but the output will be incomplete
+                // The user will see a warning in the logs
+            }
+        }
+
+        // Debug: Log the response structure
+        log('debug', 'Response object keys', { keys: Object.keys(response || {}) });
+        log('debug', 'Response type', { type: typeof response, hasText: !!response?.text });
+
+        const rawResponse = response?.text || response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        log('debug', 'AI response received', { length: rawResponse.length, preview: rawResponse.substring(0, 200) });
+
+        const jsonResponse = cleanOutput(rawResponse);
+
+        if (!jsonResponse || jsonResponse.trim().length === 0) {
+            log('error', 'Empty response after cleaning', {
+                rawLength: rawResponse.length,
+                cleanedLength: jsonResponse?.length || 0,
+                responseStructure: JSON.stringify(response).substring(0, 500)
+            });
+            throw new Error('Empty response from AI. Please try again or use a different audio file.');
+        }
+
+        // Check if AI returned empty array (no speech detected)
+        if (jsonResponse.trim() === '[]') {
+            log('warn', 'No speech detected in audio', { jobId });
+            throw new Error('No human speech detected in the audio file. The file may contain only music, instrumental audio, or be too quiet. Please ensure your audio contains clear spoken words.');
+        }
+
+        const srtOutput = jsonToSrt(jsonResponse);
+
+        if (!srtOutput || srtOutput.includes('[Error]')) {
+            log('error', 'SRT conversion failed', { jsonResponse: jsonResponse.substring(0, 200) });
+            throw new Error('Failed to generate subtitles. The audio may be unclear or too short.');
+        }
+
+        const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+
+        updateProgress(jobId, 'complete', 100, `Completed in ${duration}s`);
+
+        log('info', `Job completed successfully`, {
+            jobId: jobId.substring(0, 8),
+            duration: duration + 's',
+            subtitleCount: srtOutput.split('\n\n').length
+        });
+
+        res.json({ srt: srtOutput, jobId, duration });
+
+    } catch (error) {
+        log('error', 'Transcription failed', {
+            jobId: jobId.substring(0, 8),
+            error: error.message,
+            stack: error.stack?.substring(0, 500)
+        });
+
+        updateProgress(jobId, 'error', 0, error.message);
+
+        // Categorize errors and provide user-friendly messages
+        let statusCode = 500;
+        let userMessage = 'An unexpected error occurred. Please try again.';
+        let errorType = 'internal_error';
+
+        if (error.message.includes('quota') || error.message.includes('429')) {
+            statusCode = 429;
+            userMessage = 'API quota exceeded. Please try again in a few minutes.';
+            errorType = 'quota_exceeded';
+        } else if (error.message.includes('timeout') || error.message.includes('ETIMEDOUT')) {
+            statusCode = 408;
+            userMessage = 'Processing timeout. Please try with a shorter file or reduce quality.';
+            errorType = 'timeout';
+        } else if (error.message.includes('ENOENT') || error.message.includes('file')) {
+            statusCode = 400;
+            userMessage = 'File processing error. The file may be corrupted or in an unsupported format.';
+            errorType = 'file_error';
+        } else if (error.message.includes('FFmpeg') || error.message.includes('codec')) {
+            statusCode = 400;
+            userMessage = 'Audio conversion failed. Please ensure the file is a valid audio/video file.';
+            errorType = 'conversion_error';
+        } else if (error.message.includes('FAILED')) {
+            statusCode = 500;
+            userMessage = 'Gemini AI processing failed. Please try again or use a different file.';
+            errorType = 'ai_processing_error';
+        }
+
+        if (!res.headersSent) {
+            res.status(statusCode).json({
+                error: errorType,
+                message: userMessage,
+                details: isProduction ? undefined : error.message,
+                jobId,
+                timestamp: new Date().toISOString()
+            });
+        }
+
+    } finally {
+        // Cleanup
+        for (const p of cleanupPaths) {
+            await deleteLocalFile(p);
+        }
+
+        if (geminiFileName) {
+            try {
+                await aiClient.files.delete({ name: geminiFileName });
+            } catch (e) {
+                // Ignore cleanup errors
+            }
+        }
+
+        // Close SSE connection
+        const client = progressClients.get(jobId);
+        if (client) {
+            client.write(`data: ${JSON.stringify({ stage: 'done', percent: 100, message: 'Stream closed' })}\n\n`);
+            progressClients.delete(jobId);
+        }
+
+        // Remove job from tracking after 5 minutes
+        setTimeout(() => activeJobs.delete(jobId), 5 * 60 * 1000);
+    }
+});
+
+// Fallback for SPA
+app.get('*', (req, res) => {
+    res.sendFile(path.join(staticRoot, 'index.html'));
+});
+
+// ═══════════════════════════════════════════════════════════
+//   HELPER FUNCTIONS
+// ═══════════════════════════════════════════════════════════
+
+function buildEnhancedPrompt(wordLimit, vocabulary = []) {
+    const vocabString = vocabulary.length > 0
+        ? `\n\nVOCABULARY LIST (Prioritize these spellings): ${vocabulary.join(', ')}`
+        : '';
+
+    return `You are a forensic transcription engine. Your task is to transcribe ONLY HUMAN SPEECH from audio to a JSON array.
+${vocabString}
+
+CRITICAL INSTRUCTIONS:
+1. ONLY transcribe human speech (spoken words, dialogue, narration)
+2. IGNORE all music, instrumental sections, sound effects, and background noise
+3. SKIP any portions of audio that contain no human speech
+4. If the audio contains music with speech, transcribe ONLY the speech parts
+5. If there is NO human speech at all in the audio, return an empty array: []
+
+You MUST return ONLY a valid JSON array. Nothing else. Start with [ and end with ].
+
+EXAMPLE FORMAT (copy this structure exactly):
+
+[{"start":"00:00:00,000","end":"00:00:03,500","text":"Hello, this is the first sentence."},{"start":"00:00:04,000","end":"00:00:07,200","text":"Thank you for that introduction."}]
+
+REQUIREMENTS:
+1. Start with [ character
+2. End with ] character  
+3. Each object must have: "start", "end", "text"
+4. Timestamps: HH:MM:SS,mmm format (example: "00:00:05,250")
+5. Maximum ${wordLimit} words per "text" field
+6. Each segment 1-3 seconds duration
+7. Break at natural pauses
+8. Use exact vocabulary spellings if provided
+9. Do NOT include speaker labels or speaker identification
+10. ONLY include segments where human speech is present
+
+DO NOT:
+- Add markdown code blocks
+- Add explanations before or after
+- Add any text outside the JSON array
+- Use newlines inside the JSON (keep it compact)
+- Include speaker labels like "Speaker 1" or "[Speaker]"
+
+OUTPUT NOW (JSON array only):`;
+}
+
+/**
+ * Transcribe audio using Hugging Face Whisper API (Fallback for blocked content)
+ */
+async function transcribeWithWhisper(audioPath, wordLimit, jobId) {
+    if (!hfClient) {
+        throw new Error('Hugging Face API key not configured. Cannot use Whisper fallback.');
+    }
+
+    try {
+        log('info', 'Using Whisper fallback for transcription', { jobId: jobId.substring(0, 8) });
+        updateProgress(jobId, 'transcribing', 75, 'Transcribing with Whisper (fallback)...');
+
+        // Read the audio file
+        const audioBuffer = await fsPromises.readFile(audioPath);
+        const audioBlob = new Blob([audioBuffer]);
+
+        // Get audio duration using ffprobe
+        const audioDuration = await getAudioDuration(audioPath);
+        log('debug', 'Audio duration detected', { duration: audioDuration, jobId: jobId.substring(0, 8) });
+
+        // Call Hugging Face Whisper API
+        // Note: HF's free API may truncate long audio, but we'll work with what we get
+        const result = await hfClient.automaticSpeechRecognition({
+            data: audioBlob,
+            model: 'openai/whisper-large-v3'
+        });
+
+        if (!result || !result.text) {
+            throw new Error('Whisper returned empty transcription');
+        }
+
+        log('info', 'Whisper transcription successful', {
+            textLength: result.text.length,
+            wordCount: result.text.split(/\s+/).length,
+            jobId: jobId.substring(0, 8)
+        });
+
+        // Convert Whisper text to SRT format with actual audio duration
+        return convertWhisperTextToSRT(result.text, wordLimit, audioDuration);
+
+    } catch (error) {
+        log('error', 'Whisper transcription failed', { error: error.message });
+        throw new Error(`Whisper fallback failed: ${error.message}`);
+    }
+}
+
+/**
+ * Get audio duration in seconds using ffprobe
+ */
+async function getAudioDuration(audioPath) {
+    return new Promise((resolve, reject) => {
+        ffmpeg.ffprobe(audioPath, (err, metadata) => {
+            if (err) {
+                log('warn', 'Could not get audio duration, using default', { error: err.message });
+                resolve(60); // Default to 60 seconds if we can't get duration
+            } else {
+                const duration = metadata.format.duration || 60;
+                resolve(duration);
+            }
+        });
+    });
+}
+
+/**
+ * Convert Whisper plain text to SRT format with estimated timestamps
+ */
+function convertWhisperTextToSRT(text, wordLimit = 6, audioDuration = null) {
+    const words = text.trim().split(/\s+/);
+    const segments = [];
+
+    // Calculate timing based on actual audio duration if available
+    // Otherwise use average speaking rate (2.5 words per second)
+    const totalWords = words.length;
+    const estimatedDuration = audioDuration || (totalWords / 2.5);
+    const secondsPerWord = estimatedDuration / totalWords;
+
+    let currentTime = 0;
+
+    for (let i = 0; i < words.length; i += wordLimit) {
+        const segmentWords = words.slice(i, i + wordLimit);
+        const segmentText = segmentWords.join(' ');
+
+        // Calculate duration for this segment
+        const duration = segmentWords.length * secondsPerWord;
+        const startTime = currentTime;
+        const endTime = Math.min(currentTime + duration, estimatedDuration);
+
+        segments.push({
+            index: segments.length + 1,
+            start: formatSRTTime(startTime),
+            end: formatSRTTime(endTime),
+            text: segmentText
+        });
+
+        currentTime = endTime;
+
+        // Stop if we've reached the end of the audio
+        if (currentTime >= estimatedDuration) {
+            break;
+        }
+    }
+
+    // Convert to SRT format with proper line breaks
+    return segments.map(seg =>
+        `${seg.index}\n${seg.start} --> ${seg.end}\n${seg.text}\n`
+    ).join('\n');
+}
+
+/**
+ * Format seconds to SRT timestamp format (HH:MM:SS,mmm)
+ */
+function formatSRTTime(seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    const ms = Math.floor((seconds % 1) * 1000);
+
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')},${String(ms).padStart(3, '0')}`;
+}
+
+function transcodeToWav(inputPath, onProgress = () => { }) {
+    const outputPath = path.join(os.tmpdir(), `srt-ai-hq-${crypto.randomUUID()}.wav`);
+
+    return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+            reject(new Error('Transcoding timed out - file may be too large'));
+        }, 60 * 60 * 1000);
+
+        ffmpeg(inputPath)
+            .noVideo()
+            .audioChannels(2)
+            .audioFrequency(44100)
+            .audioCodec('pcm_s16le')
+            .format('wav')
+            .audioFilters([
+                'highpass=f=80',
+                'lowpass=f=12000',
+                'loudnorm=I=-16:TP=-1.5:LRA=11',
+                'afftdn=nf=-25'
+            ])
+            .on('progress', (progress) => {
+                if (progress.percent) {
+                    onProgress(progress.percent);
+                }
+            })
+            .on('end', () => {
+                clearTimeout(timeout);
+                resolve(outputPath);
+            })
+            .on('error', (err) => {
+                clearTimeout(timeout);
+                reject(err);
+            })
+            .save(outputPath);
+    });
+}
+
+async function deleteLocalFile(filePath) {
+    try {
+        await fsPromises.unlink(filePath);
+        log('debug', 'Deleted temp file', { path: filePath });
+    } catch (e) {
+        log('warn', 'Failed to delete temp file', { path: filePath, error: e.message });
+    }
+}
+
+/**
+ * Validate uploaded file
+ * @param {Object} file - Multer file object
+ * @returns {string|null} Error message or null if valid
+ */
+async function validateFile(file) {
+    // Check file size
+    if (file.size === 0) {
+        return 'File is empty. Please upload a valid file.';
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+        const sizeMB = Math.round(file.size / 1024 / 1024);
+        const maxMB = Math.round(MAX_FILE_SIZE / 1024 / 1024);
+        return `File too large (${sizeMB}MB). Maximum size is ${maxMB}MB. Please compress or split your file.`;
+    }
+
+    // Check MIME type
+    if (!SUPPORTED_FORMATS.includes(file.mimetype)) {
+        return `Unsupported file format: ${file.mimetype}. Please use MP4, MP3, WAV, MOV, AVI, M4A, FLAC, or OGG.`;
+    }
+
+    // Check file extension matches MIME type
+    const ext = path.extname(file.originalname).toLowerCase();
+    const validExtensions = ['.mp4', '.mp3', '.wav', '.mov', '.avi', '.m4a', '.flac', '.ogg', '.mkv'];
+    if (!validExtensions.includes(ext)) {
+        return `Invalid file extension: ${ext}. Please use a valid audio/video file.`;
+    }
+
+    // Try to read file header to verify it's not corrupted
+    try {
+        const buffer = await fsPromises.readFile(file.path, { encoding: null, flag: 'r' });
+        if (buffer.length < 100) {
+            return 'File appears to be corrupted or incomplete.';
+        }
+
+        // Basic magic number validation for common formats
+        const header = buffer.toString('hex', 0, 12);
+        const validHeaders = [
+            'fff', // MP3
+            '494433', // MP3 with ID3
+            '52494646', // WAV/AVI (RIFF)
+            '000000', // MP4/M4A (ftyp)
+            '66747970', // MP4 (ftyp)
+            '1a45dfa3', // MKV
+            '664c6143', // FLAC
+            '4f676753'  // OGG
+        ];
+
+        const isValidHeader = validHeaders.some(h => header.startsWith(h));
+        if (!isValidHeader && !header.startsWith('00000')) {
+            log('warn', 'Suspicious file header', { header: header.substring(0, 20), filename: file.originalname });
+            // Don't reject, as some valid files might have unusual headers
+        }
+    } catch (e) {
+        log('error', 'File validation read error', { error: e.message });
+        return 'Unable to read file. The file may be corrupted.';
+    }
+
+    return null; // File is valid
+}
+
+function cleanOutput(text) {
+    if (!text) return '';
+
+    let cleaned = text
+        .replace(/```json/gi, '')
+        .replace(/```/g, '')
+        .trim();
+
+    const jsonMatch = cleaned.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+        cleaned = jsonMatch[0];
+    }
+
+    const firstBracket = cleaned.indexOf('[');
+    const lastBracket = cleaned.lastIndexOf(']');
+    if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+        cleaned = cleaned.substring(firstBracket, lastBracket + 1);
+    }
+
+    return cleaned;
+}
+
+function jsonToSrt(jsonString) {
+    if (!jsonString || !jsonString.trim()) {
+        return `1\n00:00:00,000 --> 00:00:05,000\n[Error] Empty transcription response.`;
+    }
+
+    try {
+        let cleanJson = jsonString.trim();
+
+        const jsonStart = cleanJson.indexOf('[');
+        const jsonEnd = cleanJson.lastIndexOf(']');
+
+        if (jsonStart === -1 || jsonEnd === -1 || jsonEnd <= jsonStart) {
+            throw new Error('No JSON array found');
+        }
+
+        cleanJson = cleanJson.substring(jsonStart, jsonEnd + 1);
+        cleanJson = cleanJson.replace(/,\s*([}\]])/g, '$1');
+
+        const data = JSON.parse(cleanJson);
+
+        if (!Array.isArray(data) || data.length === 0) {
+            throw new Error('Invalid or empty array');
+        }
+
+        // Post-process to enforce word limits (Gemini often ignores this)
+        const processedSegments = [];
+        let segmentIndex = 1;
+
+        for (const entry of data) {
+            const start = entry.start || '00:00:00,000';
+            const end = entry.end || '00:00:00,000';
+            const text = (entry.text || '').trim();
+
+            if (!text) continue;
+
+            // Split long segments into chunks of max 6 words
+            const words = text.split(/\s+/);
+            const wordLimit = 6;
+
+            if (words.length <= wordLimit) {
+                // Segment is already within limit
+                processedSegments.push({
+                    index: segmentIndex++,
+                    start,
+                    end,
+                    text
+                });
+            } else {
+                // Split into multiple segments
+                const startMs = timeToMs(start);
+                const endMs = timeToMs(end);
+                const totalDuration = endMs - startMs;
+                const wordsPerMs = totalDuration / words.length;
+
+                for (let i = 0; i < words.length; i += wordLimit) {
+                    const chunk = words.slice(i, i + wordLimit);
+                    const chunkStart = startMs + (i * wordsPerMs);
+                    const chunkEnd = startMs + ((i + chunk.length) * wordsPerMs);
+
+                    processedSegments.push({
+                        index: segmentIndex++,
+                        start: msToTime(chunkStart),
+                        end: msToTime(chunkEnd),
+                        text: chunk.join(' ')
+                    });
+                }
+            }
+        }
+
+        return processedSegments.map(seg =>
+            `${seg.index}\n${seg.start} --> ${seg.end}\n${seg.text}`
+        ).join('\n\n');
+
+    } catch (e) {
+        console.error('[Error] JSON parsing failed:', e.message);
+
+        // Try recovery
+        try {
+            const objects = [];
+            const regex = /\{"start":"([^"]+)","end":"([^"]+)","text":"([^"]+)"\}/g;
+            let match;
+            while ((match = regex.exec(jsonString)) !== null) {
+                objects.push({ start: match[1], end: match[2], text: match[3] });
+            }
+
+            if (objects.length > 0) {
+                return objects.map((entry, index) => {
+                    const sequence = index + 1;
+                    return `${sequence}\n${entry.start} --> ${entry.end}\n${entry.text}`;
+                }).join('\n\n');
+            }
+        } catch (recoveryErr) { }
+
+        return `1\n00:00:00,000 --> 00:00:05,000\n[Error] Failed to parse transcription.`;
+    }
+}
+
+// Helper functions for time conversion
+function timeToMs(timeStr) {
+    const parts = timeStr.split(/[:,]/);
+    const hours = parseInt(parts[0]) || 0;
+    const minutes = parseInt(parts[1]) || 0;
+    const seconds = parseInt(parts[2]) || 0;
+    const ms = parseInt(parts[3]) || 0;
+    return (hours * 3600000) + (minutes * 60000) + (seconds * 1000) + ms;
+}
+
+function msToTime(ms) {
+    const hours = Math.floor(ms / 3600000);
+    const minutes = Math.floor((ms % 3600000) / 60000);
+    const seconds = Math.floor((ms % 60000) / 1000);
+    const milliseconds = Math.floor(ms % 1000);
+
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')},${String(milliseconds).padStart(3, '0')}`;
+}
+
+// ═══════════════════════════════════════════════════════════
+//   START SERVER
+// ═══════════════════════════════════════════════════════════
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+    log('info', 'SIGTERM received, shutting down gracefully');
+    process.exit(0);
+});
+
+process.on('SIGINT', () => {
+    log('info', 'SIGINT received, shutting down gracefully');
+    process.exit(0);
+});
+
+process.on('uncaughtException', (error) => {
+    log('error', 'Uncaught exception', { error: error.message, stack: error.stack });
+    process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    log('error', 'Unhandled rejection', { reason, promise });
+});
+
+app.listen(PORT, () => {
+    log('info', '══════════════════════════════════════════');
+    log('info', `🎬 SRT-AI Server v2.0.0 (Production Ready)`);
+    log('info', `📍 URL:   http://localhost:${PORT}`);
+    log('info', `🤖 Model: ${GEMINI_MODEL}`);
+    log('info', `⚙️  Environment: ${NODE_ENV}`);
+    log('info', `⏱️  Timeout: ${REQUEST_TIMEOUT_MS / 1000}s`);
+    log('info', `📊 Rate Limit: ${RATE_LIMIT_REQUESTS} req/hour`);
+    log('info', `📝 Log Level: ${LOG_LEVEL}`);
+    log('info', '══════════════════════════════════════════');
+});
+
+ 
+ / /   � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " �  
+ / /       L O N G   A U D I O   C H U N K I N G   H E L P E R S  
+ / /   � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " �  
+  
+ / * *  
+   *   S p l i t   a u d i o   f i l e   i n t o   c h u n k s   o f   s p e c i f i e d   d u r a t i o n  
+   *   @ p a r a m   { s t r i n g }   i n p u t P a t h   -   P a t h   t o   i n p u t   f i l e  
+   *   @ p a r a m   { n u m b e r }   s e g m e n t T i m e   -   S e g m e n t   t i m e   i n   s e c o n d s   ( d e f a u l t   6 0 0   =   1 0   m i n s )  
+   *   @ r e t u r n s   { P r o m i s e < s t r i n g [ ] > }   L i s t   o f   c h u n k   f i l e   p a t h s  
+   * /  
+ a s y n c   f u n c t i o n   s p l i t A u d i o ( i n p u t P a t h ,   s e g m e n t T i m e   =   6 0 0 )   {  
+         c o n s t   o u t p u t P a t t e r n   =   p a t h . j o i n ( p a t h . d i r n a m e ( i n p u t P a t h ) ,   ` c h u n k _ % 0 3 d $ { p a t h . e x t n a m e ( i n p u t P a t h ) } ` ) ;  
+  
+         r e t u r n   n e w   P r o m i s e ( ( r e s o l v e ,   r e j e c t )   = >   {  
+                 f f m p e g ( i n p u t P a t h )  
+                         . o u t p u t O p t i o n s ( [  
+                                 ' - f ' ,   ' s e g m e n t ' ,  
+                                 ' - s e g m e n t _ t i m e ' ,   s e g m e n t T i m e . t o S t r i n g ( ) ,  
+                                 ' - c ' ,   ' c o p y ' ,  
+                                 ' - r e s e t _ t i m e s t a m p s ' ,   ' 1 '  
+                         ] )  
+                         . o u t p u t ( o u t p u t P a t t e r n )  
+                         . o n ( ' e n d ' ,   a s y n c   ( )   = >   {  
+                                 / /   F i n d   g e n e r a t e d   f i l e s  
+                                 c o n s t   d i r   =   p a t h . d i r n a m e ( i n p u t P a t h ) ;  
+                                 c o n s t   f i l e s   =   a w a i t   f s P r o m i s e s . r e a d d i r ( d i r ) ;  
+                                 c o n s t   c h u n k s   =   f i l e s  
+                                         . f i l t e r ( f   = >   f . s t a r t s W i t h ( ' c h u n k _ ' )   & &   f . e n d s W i t h ( p a t h . e x t n a m e ( i n p u t P a t h ) ) )  
+                                         . m a p ( f   = >   p a t h . j o i n ( d i r ,   f ) )  
+                                         . s o r t ( ) ;  
+                                 r e s o l v e ( c h u n k s ) ;  
+                         } )  
+                         . o n ( ' e r r o r ' ,   ( e r r )   = >   r e j e c t ( e r r ) )  
+                         . r u n ( ) ;  
+         } ) ;  
+ }  
+  
+ / * *  
+   *   A d j u s t   t i m e s t a m p s   i n   S R T   c o n t e n t   b y   a d d i n g   a n   o f f s e t  
+   * /  
+ f u n c t i o n   a d j u s t C h u n k T i m e s t a m p s ( s r t C o n t e n t ,   t i m e O f f s e t M s ,   s e q u e n c e O f f s e t )   {  
+         i f   ( ! s r t C o n t e n t )   r e t u r n   ' ' ;  
+  
+         / /   P a r s e   S R T   b l o c k s  
+         c o n s t   b l o c k s   =   s r t C o n t e n t . t r i m ( ) . s p l i t ( / \ n \ s * \ n / ) ;  
+  
+         r e t u r n   b l o c k s . m a p ( b l o c k   = >   {  
+                 c o n s t   l i n e s   =   b l o c k . s p l i t ( ' \ n ' ) ;  
+                 i f   ( l i n e s . l e n g t h   <   3 )   r e t u r n   b l o c k ;  
+  
+                 / /   A d j u s t   s e q u e n c e   n u m b e r  
+                 c o n s t   s e q   =   p a r s e I n t ( l i n e s [ 0 ] ) ;  
+                 i f   ( ! i s N a N ( s e q ) )   {  
+                         l i n e s [ 0 ]   =   ( s e q   +   s e q u e n c e O f f s e t ) . t o S t r i n g ( ) ;  
+                 }  
+  
+                 / /   A d j u s t   t i m e s t a m p s  
+                 / /   F o r m a t :   0 0 : 0 0 : 0 0 , 0 0 0   - - >   0 0 : 0 0 : 0 0 , 0 0 0  
+                 c o n s t   t i m e L i n e   =   l i n e s [ 1 ] ;  
+                 c o n s t   t i m e M a t c h   =   t i m e L i n e . m a t c h ( / ( \ d { 2 } : \ d { 2 } : \ d { 2 } , \ d { 3 } ) \ s * - - > \ s * ( \ d { 2 } : \ d { 2 } : \ d { 2 } , \ d { 3 } ) / ) ;  
+  
+                 i f   ( t i m e M a t c h )   {  
+                         c o n s t   s t a r t M s   =   t i m e T o M s ( t i m e M a t c h [ 1 ] )   +   t i m e O f f s e t M s ;  
+                         c o n s t   e n d M s   =   t i m e T o M s ( t i m e M a t c h [ 2 ] )   +   t i m e O f f s e t M s ;  
+                         l i n e s [ 1 ]   =   ` $ { m s T o T i m e ( s t a r t M s ) }   - - >   $ { m s T o T i m e ( e n d M s ) } ` ;  
+                 }  
+  
+                 r e t u r n   l i n e s . j o i n ( ' \ n ' ) ;  
+         } ) . j o i n ( ' \ n \ n ' ) ;  
+ }  
+  
+ / * *  
+   *   C o u n t   n u m b e r   o f   s u b t i t l e s   i n   a n   S R T   s t r i n g  
+   * /  
+ f u n c t i o n   c o u n t S u b t i t l e s ( s r t C o n t e n t )   {  
+         i f   ( ! s r t C o n t e n t )   r e t u r n   0 ;  
+         r e t u r n   ( s r t C o n t e n t . m a t c h ( / \ n \ s * \ n / g )   | |   [ ] ) . l e n g t h   +   1 ;  
+ }  
+ 

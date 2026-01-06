@@ -1,0 +1,42 @@
+{
+  "name": "srt-ai",
+  "version": "1.0.0",
+  "description": "AI-powered SRT subtitle generator using Google Gemini",
+  "main": "server.js",
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "start:prod": "NODE_ENV=production node server.js",
+    "dev": "node --watch server.js",
+    "logs": "tail -f logs/combined.log",
+    "health": "curl http://localhost:3000/api/health",
+    "docker:build": "docker build -t srt-ai .",
+    "docker:run": "docker-compose up -d",
+    "docker:stop": "docker-compose down",
+    "docker:logs": "docker-compose logs -f"
+  },
+  "keywords": [
+    "srt",
+    "subtitle",
+    "transcription",
+    "ai",
+    "gemini",
+    "audio",
+    "video"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "@huggingface/inference": "^4.13.5",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "ffmpeg-static": "^5.2.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "multer": "^2.0.0"
+  }
+}
