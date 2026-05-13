@@ -1,0 +1,44 @@
+# SRT-AI Docker Compose Configuration
+# Production-ready setup
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: srt-ai
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-3000}:3000"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-1.5-pro-latest}
+      - NODE_ENV=production
+      - PORT=3000
+    volumes:
+      # Use named volume for temp files (better performance)
+      - srt-ai-temp:/tmp
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    # Resource limits (adjust based on your server)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  srt-ai-temp:
+    driver: local

@@ -1,0 +1,2275 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full" id="html-root">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SRT Studio | AI Subtitle Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['DM Sans', 'system-ui', 'sans-serif'] },
+                    colors: {
+                        primary: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            200: '#c7d2fe',
+                            300: '#a5b4fc',
+                            400: '#818cf8',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca'
+                        },
+                        dark: {
+                            bg: '#0f172a',
+                            surface: '#1e293b',
+                            card: '#1e293b',
+                            border: '#334155',
+                            text: '#e2e8f0',
+                            muted: '#94a3b8'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: #cbd5e1 #f1f5f9;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        /* Dark mode scrollbars */
+        .dark * {
+            scrollbar-color: #475569 #1e293b;
+        }
+
+        .dark ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+
+        .dark ::-webkit-scrollbar-thumb {
+            background: #475569;
+        }
+
+        .dark ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+
+        /* Range slider */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: transparent;
+            cursor: pointer;
+        }
+
+        input[type="range"]::-webkit-slider-track {
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #4f46e5;
+            border-radius: 50%;
+            margin-top: -6px;
+            box-shadow: 0 2px 6px rgba(79, 70, 229, 0.4);
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            background: #4338ca;
+            transform: scale(1.1);
+        }
+
+        input[type="range"]::-moz-range-track {
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #4f46e5;
+            border-radius: 50%;
+            border: none;
+        }
+
+        /* Dark mode range slider */
+        .dark input[type="range"]::-webkit-slider-track {
+            background: #334155;
+        }
+
+        .dark input[type="range"]::-moz-range-track {
+            background: #334155;
+        }
+
+        /* Button styles */
+        .btn {
+            font-weight: 600;
+            transition: all 0.2s ease;
+            border-radius: 10px;
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #6366f1, #4f46e5);
+            color: white;
+            box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);
+        }
+
+        .btn-primary:hover {
+            box-shadow: 0 6px 20px rgba(79, 70, 229, 0.45);
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: white;
+            color: #334155;
+            border: 2px solid #e2e8f0;
+        }
+
+        .btn-secondary:hover {
+            border-color: #cbd5e1;
+            background: #f8fafc;
+        }
+
+        /* Dark mode buttons */
+        .dark .btn-secondary {
+            background: #1e293b;
+            color: #e2e8f0;
+            border-color: #475569;
+        }
+
+        .dark .btn-secondary:hover {
+            border-color: #64748b;
+            background: #334155;
+        }
+
+        /* Card */
+        .card {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+
+        /* Dark mode card */
+        .dark .card {
+            background: #1e293b;
+            border-color: #334155;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Dark mode: fix dynamically-generated text inside cards */
+        .dark .card .text-slate-800,
+        .dark .card .text-slate-700 {
+            color: #f1f5f9 !important;
+        }
+
+        .dark .card .text-slate-400 {
+            color: #94a3b8 !important;
+        }
+
+        /* Drop zone */
+        .drop-zone {
+            border: 2px dashed #cbd5e1;
+            background: #fafbfc;
+        }
+
+        .drop-zone:hover {
+            border-color: #6366f1;
+            background: #f5f3ff;
+        }
+
+        .drop-active {
+            border-color: #6366f1 !important;
+            background: #eef2ff !important;
+        }
+
+        /* Dark mode drop zone */
+        .dark .drop-zone {
+            border-color: #475569;
+            background: #0f172a;
+        }
+
+        .dark .drop-zone:hover {
+            border-color: #818cf8;
+            background: #1e1b4b;
+        }
+
+        .dark .drop-active {
+            border-color: #818cf8 !important;
+            background: #1e1b4b !important;
+        }
+
+        /* Progress ring */
+        .progress-ring {
+            transition: stroke-dashoffset 0.5s ease;
+        }
+
+        /* Stage indicators */
+        .stage-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #e2e8f0;
+            transition: all 0.3s;
+        }
+
+        .stage-active .stage-dot {
+            background: #6366f1;
+            box-shadow: 0 0 12px rgba(99, 102, 241, 0.5);
+        }
+
+        .stage-complete .stage-dot {
+            background: #10b981;
+        }
+
+        /* Toast */
+        .toast {
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* Fade in */
+        .fade-in {
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Lyrics View - Spotify-style */
+        .lyrics-scroll {
+            scroll-behavior: smooth;
+        }
+
+        .lyric-line {
+            padding: 10px 20px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.35s cubic-bezier(.4, 0, .2, 1);
+            color: #94a3b8;
+            font-size: 15px;
+            line-height: 1.7;
+            border-left: 3px solid transparent;
+        }
+
+        .lyric-line:hover {
+            background: #f1f5f9;
+            color: #475569;
+        }
+
+        .lyric-line.past {
+            color: #64748b;
+        }
+
+        .lyric-line.active {
+            color: #1e293b;
+            font-size: 17px;
+            font-weight: 600;
+            background: linear-gradient(135deg, #eef2ff, #e0e7ff);
+            border-left-color: #6366f1;
+            transform: scale(1.01);
+            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.1);
+        }
+
+        .lyric-line .lyric-ts {
+            font-size: 10px;
+            font-family: 'DM Sans', monospace;
+            color: #cbd5e1;
+            letter-spacing: 0.3px;
+            transition: color 0.3s;
+        }
+
+        .lyric-line.active .lyric-ts {
+            color: #818cf8;
+        }
+
+        .lyric-line.past .lyric-ts {
+            color: #cbd5e1;
+        }
+
+        /* Dark mode lyrics */
+        .dark .lyric-line {
+            color: #64748b;
+        }
+
+        .dark .lyric-line:hover {
+            background: #334155;
+            color: #cbd5e1;
+        }
+
+        .dark .lyric-line.past {
+            color: #94a3b8;
+        }
+
+        .dark .lyric-line.active {
+            color: #f1f5f9;
+            background: linear-gradient(135deg, #312e81, #1e1b4b);
+            border-left-color: #818cf8;
+            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
+        }
+
+        .dark .lyric-line .lyric-ts {
+            color: #475569;
+        }
+
+        .dark .lyric-line.active .lyric-ts {
+            color: #a5b4fc;
+        }
+
+        .dark .lyric-line.past .lyric-ts {
+            color: #475569;
+        }
+
+        /* Audio progress bar */
+        .audio-progress-track {
+            position: relative;
+            height: 6px;
+            background: #e2e8f0;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: height 0.15s;
+        }
+
+        .audio-progress-track:hover {
+            height: 10px;
+        }
+
+        .audio-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #6366f1, #818cf8);
+            border-radius: 3px;
+            position: relative;
+            transition: width 0.1s linear;
+        }
+
+        .audio-progress-track:hover .audio-progress-thumb {
+            opacity: 1;
+            transform: translate(50%, -50%) scale(1);
+        }
+
+        .audio-progress-thumb {
+            position: absolute;
+            right: 0;
+            top: 50%;
+            transform: translate(50%, -50%) scale(0);
+            width: 14px;
+            height: 14px;
+            background: white;
+            border: 2.5px solid #6366f1;
+            border-radius: 50%;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+            opacity: 0;
+            transition: opacity 0.15s, transform 0.15s;
+        }
+
+        /* Dark mode audio progress */
+        .dark .audio-progress-track {
+            background: #334155;
+        }
+
+        .dark .audio-progress-thumb {
+            background: #1e293b;
+            border-color: #818cf8;
+        }
+
+        /* Sidebar link */
+        .nav-link {
+            transition: all 0.2s;
+        }
+
+        .nav-link:hover {
+            background: #f1f5f9;
+        }
+
+        .nav-link.active {
+            background: #eef2ff;
+            color: #4f46e5;
+        }
+
+        /* Dark mode nav */
+        .dark .nav-link:hover {
+            background: #334155;
+        }
+
+        .dark .nav-link.active {
+            background: #312e81;
+            color: #a5b4fc;
+        }
+
+        /* Mini stages for processing phase */
+        .stage-mini {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 9999px;
+            background: #f1f5f9;
+            font-size: 11px;
+            font-weight: 500;
+            color: #64748b;
+            transition: all 0.3s ease;
+        }
+
+        .stage-mini-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #cbd5e1;
+            transition: all 0.3s ease;
+        }
+
+        .stage-mini.active {
+            background: #eef2ff;
+            color: #4f46e5;
+        }
+
+        .stage-mini.active .stage-mini-dot {
+            background: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+            animation: pulse-dot 1.5s infinite;
+        }
+
+        .stage-mini.complete {
+            background: #ecfdf5;
+            color: #059669;
+        }
+
+        .stage-mini.complete .stage-mini-dot {
+            background: #10b981;
+        }
+
+        @keyframes pulse-dot {
+
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.2);
+            }
+        }
+
+        /* Dark mode stages */
+        .dark .stage-mini {
+            background: #334155;
+            color: #94a3b8;
+        }
+
+        .dark .stage-mini-dot {
+            background: #475569;
+        }
+
+        .dark .stage-mini.active {
+            background: #312e81;
+            color: #a5b4fc;
+        }
+
+        .dark .stage-mini.complete {
+            background: #064e3b;
+            color: #6ee7b7;
+        }
+
+        /* Dark mode select */
+        .dark select {
+            background-color: #0f172a;
+            border-color: #475569;
+            color: #e2e8f0;
+        }
+
+        .dark select:focus {
+            border-color: #818cf8;
+        }
+
+        /* Dark mode textarea */
+        .dark textarea {
+            background-color: #0f172a;
+            color: #e2e8f0;
+        }
+
+        /* Dark mode transition */
+        body,
+        .card,
+        .btn-secondary,
+        .nav-link,
+        .drop-zone,
+        .lyric-line,
+        .stage-mini,
+        .audio-progress-track,
+        select,
+        textarea {
+            transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+        }
+    </style>
+</head>
+
+<body class="h-full bg-slate-50 dark:bg-dark-bg text-slate-700 dark:text-dark-text font-sans antialiased">
+
+    <div class="h-full flex">
+
+        <!-- Sidebar -->
+        <aside
+            class="w-72 bg-white dark:bg-dark-surface border-r border-slate-200 dark:border-dark-border flex flex-col shadow-sm">
+
+            <!-- Logo -->
+            <div class="h-20 flex items-center px-6 border-b border-slate-100 dark:border-dark-border">
+                <div class="flex items-center gap-3">
+                    <div
+                        class="w-11 h-11 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center shadow-lg shadow-primary-500/30">
+                        <svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                            stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h1 class="text-lg font-bold text-slate-800 dark:text-white">SRT Studio</h1>
+                        <p class="text-xs text-slate-400 dark:text-slate-500 font-medium">AI Subtitle Generator</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <nav class="flex-1 p-4 space-y-2">
+                <button id="nav-studio"
+                    class="nav-link active w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold dark:text-dark-text">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                    </svg>
+                    Studio
+                </button>
+                <button id="nav-history"
+                    class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-500 dark:text-slate-400">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    History
+                </button>
+            </nav>
+
+
+            <!-- Language Selector -->
+            <div class="p-4 border-t border-slate-100">
+                <label
+                    class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-3">Language</label>
+                <div class="relative">
+                    <select id="language-select"
+                        class="w-full appearance-none bg-white border-2 border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-700 focus:outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 transition-all cursor-pointer hover:border-slate-300">
+                        <option value="auto">Auto-Detect</option>
+                        <optgroup label="Common">
+                            <option value="English">English</option>
+                            <option value="Spanish">Spanish</option>
+                            <option value="French">French</option>
+                            <option value="German">German</option>
+                            <option value="Portuguese">Portuguese</option>
+                            <option value="Italian">Italian</option>
+                            <option value="Dutch">Dutch</option>
+                            <option value="Russian">Russian</option>
+                            <option value="Chinese (Mandarin)">Chinese (Mandarin)</option>
+                            <option value="Japanese">Japanese</option>
+                            <option value="Korean">Korean</option>
+                            <option value="Arabic">Arabic</option>
+                            <option value="Hindi">Hindi</option>
+                        </optgroup>
+                        <optgroup label="South & Southeast Asian">
+                            <option value="Bengali">Bengali</option>
+                            <option value="Tamil">Tamil</option>
+                            <option value="Telugu">Telugu</option>
+                            <option value="Urdu">Urdu</option>
+                            <option value="Punjabi">Punjabi</option>
+                            <option value="Marathi">Marathi</option>
+                            <option value="Gujarati">Gujarati</option>
+                            <option value="Kannada">Kannada</option>
+                            <option value="Malayalam">Malayalam</option>
+                            <option value="Thai">Thai</option>
+                            <option value="Vietnamese">Vietnamese</option>
+                            <option value="Indonesian">Indonesian</option>
+                            <option value="Malay">Malay</option>
+                            <option value="Filipino (Tagalog)">Filipino (Tagalog)</option>
+                        </optgroup>
+                        <optgroup label="European">
+                            <option value="Polish">Polish</option>
+                            <option value="Ukrainian">Ukrainian</option>
+                            <option value="Czech">Czech</option>
+                            <option value="Romanian">Romanian</option>
+                            <option value="Greek">Greek</option>
+                            <option value="Hungarian">Hungarian</option>
+                            <option value="Swedish">Swedish</option>
+                            <option value="Danish">Danish</option>
+                            <option value="Norwegian">Norwegian</option>
+                            <option value="Finnish">Finnish</option>
+                            <option value="Turkish">Turkish</option>
+                        </optgroup>
+                        <optgroup label="Middle Eastern & African">
+                            <option value="Hebrew">Hebrew</option>
+                            <option value="Persian (Farsi)">Persian (Farsi)</option>
+                            <option value="Swahili">Swahili</option>
+                            <option value="Amharic">Amharic</option>
+                        </optgroup>
+                    </select>
+                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+                        <svg class="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                            stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </div>
+                </div>
+                <p id="language-hint" class="text-[10px] text-slate-400 mt-2 px-1">Auto-detect transcribes in the spoken
+                    language</p>
+            </div>
+
+            <!-- Slider -->
+            <div class="p-4 border-t border-slate-100 dark:border-dark-border">
+                <label
+                    class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-4">Words
+                    per
+                    line</label>
+                <div class="flex items-center gap-4">
+                    <input type="range" id="words-slider" min="3" max="15" value="8" class="flex-1">
+                    <span id="words-value"
+                        class="w-10 h-10 rounded-xl bg-primary-100 text-primary-700 flex items-center justify-center text-sm font-bold">8</span>
+                </div>
+                <div class="flex justify-between text-[10px] text-slate-400 mt-2 px-1">
+                    <span>Shorter</span>
+                    <span>Longer</span>
+                </div>
+            </div>
+
+            <!-- New Project -->
+            <div class="p-4">
+                <button id="new-btn"
+                    class="btn btn-secondary w-full py-3 text-sm flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                    New Project
+                </button>
+            </div>
+
+            <!-- Dark Mode Toggle -->
+            <div class="p-4 border-t border-slate-100 dark:border-dark-border">
+                <button id="dark-mode-toggle"
+                    class="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all">
+                    <!-- Sun icon (shown in dark mode) -->
+                    <svg id="sun-icon" class="w-5 h-5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                        stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
+                    </svg>
+                    <!-- Moon icon (shown in light mode) -->
+                    <svg id="moon-icon" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                        stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
+                    </svg>
+                    <div id="dark-mode-switch"
+                        class="w-11 h-6 bg-slate-300 dark:bg-primary-600 rounded-full relative transition-colors">
+                        <div id="dark-mode-knob"
+                            class="w-5 h-5 bg-white rounded-full absolute top-0.5 left-0.5 dark:left-[22px] transition-all shadow-sm">
+                        </div>
+                    </div>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main -->
+        <main class="flex-1 flex flex-col overflow-hidden bg-slate-50 dark:bg-dark-bg">
+
+            <!-- Header -->
+            <header
+                class="h-20 flex items-center justify-between px-8 bg-white dark:bg-dark-surface border-b border-slate-200 dark:border-dark-border">
+                <div>
+                    <h2 id="page-title" class="text-xl font-bold text-slate-800 dark:text-white">Studio</h2>
+                    <p id="page-desc" class="text-sm text-slate-400 dark:text-slate-500">Generate subtitles from audio &
+                        video</p>
+                </div>
+                <div class="flex items-center gap-4">
+                    <span id="file-display"
+                        class="text-sm text-slate-500 dark:text-slate-400 hidden font-medium"></span>
+                    <button id="download-audio-btn"
+                        class="btn btn-secondary px-5 py-2.5 text-sm hidden items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+                        </svg>
+                        Download MP3
+                    </button>
+                    <button id="download-btn" class="btn btn-primary px-5 py-2.5 text-sm hidden items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Download SRT
+                    </button>
+                    <button id="download-timing-btn" class="btn btn-secondary px-5 py-2.5 text-sm hidden items-center gap-2" title="Download word-level timing report to check alignment">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                        </svg>
+                        Timing Report
+                    </button>
+                </div>
+            </header>
+
+            <!-- Content -->
+            <div class="flex-1 overflow-y-auto p-8">
+
+                <!-- Studio View -->
+                <div id="studio-view" class="h-full">
+
+                    <!-- Upload View -->
+                    <div id="upload-view" class="h-full flex items-center justify-center fade-in">
+                        <div class="w-full max-w-2xl">
+
+                            <!-- Drop Zone -->
+                            <div id="drop-zone"
+                                class="drop-zone card p-12 cursor-pointer text-center rounded-2xl transition-all">
+                                <input type="file" id="file-input" class="hidden" accept="video/*,audio/*">
+
+                                <div
+                                    class="w-20 h-20 mx-auto mb-6 rounded-2xl bg-primary-100 dark:bg-primary-500/20 flex items-center justify-center">
+                                    <svg class="w-10 h-10 text-primary-500" fill="none" viewBox="0 0 24 24"
+                                        stroke="currentColor" stroke-width="1.5">
+                                        <path stroke-linecap="round" stroke-linejoin="round"
+                                            d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                                    </svg>
+                                </div>
+
+                                <h3 class="text-2xl font-bold text-slate-800 dark:text-white mb-2">Drop your file here
+                                </h3>
+                                <p class="text-base text-slate-400 mb-6">Supports MP4, MP3, WAV, MOV and more</p>
+
+                                <button id="browse-btn" class="btn btn-primary px-8 py-3 text-base">
+                                    Browse Files
+                                </button>
+
+                                <p class="text-sm text-slate-400 dark:text-slate-500 mt-6">Maximum file size: 2GB · Up
+                                    to 1 hour duration
+                                </p>
+                            </div>
+
+                            <!-- File Card -->
+                            <div id="file-card" class="hidden card p-5 mt-5 fade-in">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center gap-4">
+                                        <div
+                                            class="w-14 h-14 rounded-xl bg-gradient-to-br from-primary-100 to-primary-200 flex items-center justify-center">
+                                            <svg class="w-7 h-7 text-primary-600" fill="none" viewBox="0 0 24 24"
+                                                stroke="currentColor" stroke-width="1.5">
+                                                <path stroke-linecap="round" stroke-linejoin="round"
+                                                    d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+                                            </svg>
+                                        </div>
+                                        <div>
+                                            <p id="file-name"
+                                                class="text-base font-semibold text-slate-800 dark:text-white">
+                                                filename.mp4</p>
+                                            <p class="text-sm text-emerald-600 font-medium">Ready to process</p>
+                                        </div>
+                                    </div>
+                                    <button id="generate-btn"
+                                        class="btn btn-primary px-6 py-3 text-sm flex items-center gap-2">
+                                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                                            stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
+                                        </svg>
+                                        Generate Subtitles
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Processing View -->
+                    <div id="processing-view" class="hidden h-full flex items-center justify-center fade-in">
+                        <div class="w-full max-w-xl card p-10 text-center">
+
+                            <!-- Phase Indicator -->
+                            <div id="phase-indicator" class="flex items-center justify-center gap-4 mb-6">
+                                <div id="phase-upload-badge"
+                                    class="flex items-center gap-2 px-4 py-2 rounded-full bg-primary-100 text-primary-700 font-semibold text-sm transition-all">
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                                        stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round"
+                                            d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                    </svg>
+                                    <span>Uploading</span>
+                                </div>
+                                <svg class="w-5 h-5 text-slate-300" fill="none" viewBox="0 0 24 24"
+                                    stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                                </svg>
+                                <div id="phase-process-badge"
+                                    class="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-100 text-slate-400 font-semibold text-sm transition-all">
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                                        stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round"
+                                            d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                    </svg>
+                                    <span>Processing</span>
+                                </div>
+                            </div>
+
+                            <!-- Upload Phase -->
+                            <div id="upload-phase" class="mb-6">
+                                <!-- Upload Progress Ring -->
+                                <div class="relative w-40 h-40 mx-auto mb-6">
+                                    <svg class="w-40 h-40 -rotate-90">
+                                        <circle cx="80" cy="80" r="70" stroke="#e2e8f0" stroke-width="12" fill="none" />
+                                        <circle id="upload-ring" cx="80" cy="80" r="70" stroke="url(#upload-gradient)"
+                                            stroke-width="12" fill="none" stroke-dasharray="439.82"
+                                            stroke-dashoffset="439.82" stroke-linecap="round" class="progress-ring" />
+                                        <defs>
+                                            <linearGradient id="upload-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                                <stop offset="0%" stop-color="#10b981" />
+                                                <stop offset="100%" stop-color="#34d399" />
+                                            </linearGradient>
+                                        </defs>
+                                    </svg>
+                                    <div class="absolute inset-0 flex flex-col items-center justify-center">
+                                        <span id="upload-pct"
+                                            class="text-4xl font-bold text-slate-800 dark:text-white">0%</span>
+                                        <span class="text-xs text-slate-400 mt-1">UPLOADING</span>
+                                    </div>
+                                </div>
+
+                                <!-- Upload Stats -->
+                                <div id="upload-stats" class="grid grid-cols-3 gap-4 mb-4">
+                                    <div class="bg-slate-50 dark:bg-dark-bg rounded-xl p-3">
+                                        <p class="text-xs text-slate-400 mb-1">Transferred</p>
+                                        <p id="upload-transferred"
+                                            class="text-sm font-bold text-slate-700 dark:text-dark-text">0 MB</p>
+                                    </div>
+                                    <div class="bg-slate-50 dark:bg-dark-bg rounded-xl p-3">
+                                        <p class="text-xs text-slate-400 mb-1">Speed</p>
+                                        <p id="upload-speed" class="text-sm font-bold text-emerald-600">-- MB/s</p>
+                                    </div>
+                                    <div class="bg-slate-50 dark:bg-dark-bg rounded-xl p-3">
+                                        <p class="text-xs text-slate-400 mb-1">Remaining</p>
+                                        <p id="upload-eta" class="text-sm font-bold text-slate-700 dark:text-dark-text">
+                                            --</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Processing Phase (Hidden Initially) -->
+                            <div id="process-phase" class="hidden mb-6">
+                                <!-- Processing Progress Ring -->
+                                <div class="relative w-40 h-40 mx-auto mb-6">
+                                    <svg class="w-40 h-40 -rotate-90">
+                                        <circle cx="80" cy="80" r="70" stroke="#e2e8f0" stroke-width="12" fill="none" />
+                                        <circle id="process-ring" cx="80" cy="80" r="70" stroke="url(#process-gradient)"
+                                            stroke-width="12" fill="none" stroke-dasharray="439.82"
+                                            stroke-dashoffset="439.82" stroke-linecap="round" class="progress-ring" />
+                                        <defs>
+                                            <linearGradient id="process-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                                <stop offset="0%" stop-color="#6366f1" />
+                                                <stop offset="100%" stop-color="#8b5cf6" />
+                                            </linearGradient>
+                                        </defs>
+                                    </svg>
+                                    <div class="absolute inset-0 flex flex-col items-center justify-center">
+                                        <span id="process-pct"
+                                            class="text-4xl font-bold text-slate-800 dark:text-white">0%</span>
+                                        <span id="process-stage-label"
+                                            class="text-xs text-slate-400 mt-1">PROCESSING</span>
+                                    </div>
+                                </div>
+
+                                <!-- Processing Stages -->
+                                <div class="flex justify-center gap-2 mb-4">
+                                    <div class="stage-mini" data-stage="converting">
+                                        <div class="stage-mini-dot"></div>
+                                        <span>Convert</span>
+                                    </div>
+                                    <div class="stage-mini" data-stage="uploading-ai">
+                                        <div class="stage-mini-dot"></div>
+                                        <span>Upload to AI</span>
+                                    </div>
+                                    <div class="stage-mini" data-stage="transcribing">
+                                        <div class="stage-mini-dot"></div>
+                                        <span>Transcribe</span>
+                                    </div>
+                                    <div class="stage-mini" data-stage="complete">
+                                        <div class="stage-mini-dot"></div>
+                                        <span>Done</span>
+                                    </div>
+                                </div>
+
+                                <p id="process-msg" class="text-base text-slate-500">Preparing your file...</p>
+                            </div>
+
+                            <!-- Log (Hidden) -->
+                            <div class="hidden bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl p-4 h-28 overflow-y-auto text-left font-mono text-xs text-slate-600 dark:text-slate-400"
+                                id="log-box">
+                                <div class="text-primary-600">[System] Starting...</div>
+                            </div>
+
+                            <p class="text-sm text-slate-400 mt-4">
+                                Elapsed: <span id="elapsed"
+                                    class="font-mono font-semibold text-slate-600 dark:text-slate-300">00:00</span>
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Result View -->
+                    <div id="result-view" class="hidden h-full flex flex-col gap-4 fade-in">
+
+                        <!-- Audio Player Card -->
+                        <div id="audio-player-card" class="card p-5 hidden flex-shrink-0">
+                            <audio id="audio-el" preload="metadata"></audio>
+                            <div class="flex items-center gap-4">
+                                <!-- Play/Pause Button -->
+                                <button id="play-pause-btn"
+                                    class="w-12 h-12 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white flex items-center justify-center shadow-lg shadow-primary-500/30 transition-all hover:scale-105 active:scale-95 flex-shrink-0">
+                                    <svg id="play-icon" class="w-5 h-5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M8 5v14l11-7z" />
+                                    </svg>
+                                    <svg id="pause-icon" class="w-5 h-5 hidden" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                                    </svg>
+                                </button>
+
+                                <!-- Time + Progress -->
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-3">
+                                        <span id="audio-current"
+                                            class="text-xs font-mono font-semibold text-slate-500 w-10 text-right flex-shrink-0">0:00</span>
+                                        <div id="audio-progress-track" class="audio-progress-track flex-1">
+                                            <div id="audio-progress-fill" class="audio-progress-fill" style="width: 0%">
+                                                <div class="audio-progress-thumb"></div>
+                                            </div>
+                                        </div>
+                                        <span id="audio-duration"
+                                            class="text-xs font-mono font-semibold text-slate-500 w-10 flex-shrink-0">0:00</span>
+                                    </div>
+                                    <p id="audio-filename" class="text-xs text-slate-400 mt-1.5 truncate max-w-md"></p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Lyrics / Editor Card -->
+                        <div class="flex-1 card flex flex-col overflow-hidden min-h-0">
+                            <!-- Toolbar -->
+                            <div
+                                class="h-14 bg-slate-50 dark:bg-dark-bg border-b border-slate-200 dark:border-dark-border flex items-center justify-between px-5 flex-shrink-0">
+                                <div class="flex items-center gap-3">
+                                    <div class="flex bg-slate-200/80 dark:bg-dark-border/80 rounded-lg p-0.5">
+                                        <button id="lyrics-view-btn"
+                                            class="px-3.5 py-1.5 rounded-md text-xs font-semibold bg-white dark:bg-dark-surface text-primary-600 dark:text-primary-400 shadow-sm transition-all">
+                                            Lyrics
+                                        </button>
+                                        <button id="raw-view-btn"
+                                            class="px-3.5 py-1.5 rounded-md text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-all">
+                                            Raw SRT
+                                        </button>
+                                    </div>
+                                </div>
+                                <button id="copy-btn"
+                                    class="text-sm font-semibold text-primary-600 dark:text-primary-400 hover:text-primary-700 flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-colors">
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                                        stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round"
+                                            d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+                                    </svg>
+                                    Copy
+                                </button>
+                            </div>
+
+                            <!-- Lyrics Sync View -->
+                            <div id="lyrics-container" class="flex-1 overflow-y-auto lyrics-scroll">
+                                <div class="pt-8 pb-[50vh]">
+                                    <div id="lyrics-list" class="px-4 space-y-0.5"></div>
+                                </div>
+                            </div>
+
+                            <!-- Raw SRT View -->
+                            <textarea id="editor"
+                                class="hidden flex-1 bg-white dark:bg-dark-surface p-6 text-slate-700 dark:text-dark-text font-mono text-sm leading-relaxed resize-none focus:outline-none"
+                                readonly></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- History View -->
+                <div id="history-view" class="hidden h-full fade-in">
+                    <div class="max-w-4xl mx-auto">
+                        <div class="flex items-center justify-between mb-8">
+                            <div>
+                                <h2 class="text-xl font-bold text-slate-800 dark:text-white">History</h2>
+                                <p class="text-sm text-slate-400 dark:text-slate-500">Your latest transcriptions done
+                                </p>
+                            </div>
+                            <button onclick="clearHistory()"
+                                class="text-sm font-semibold text-red-500 hover:text-red-600 px-4 py-2 rounded-xl hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors">
+                                Clear All
+                            </button>
+                        </div>
+
+                        <div id="history-list" class="space-y-3"></div>
+
+                        <div id="no-history" class="hidden text-center py-20">
+                            <div
+                                class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-100 dark:bg-dark-surface flex items-center justify-center">
+                                <svg class="w-8 h-8 text-slate-400" fill="none" viewBox="0 0 24 24"
+                                    stroke="currentColor" stroke-width="1.5">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </div>
+                            <p class="text-base text-slate-400">No history yet</p>
+                            <p class="text-sm text-slate-300 dark:text-slate-600 mt-1">Your transcriptions will appear
+                                here</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toasts" class="fixed bottom-6 right-6 z-50 flex flex-col gap-3"></div>
+
+    <script>
+        // UUID Polyfill for HTTP (non-secure) connections
+        function generateUUID() {
+            if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+                return crypto.randomUUID();
+            }
+            // Fallback for HTTP
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                const r = Math.random() * 16 | 0;
+                const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        // State
+        const state = { file: null, srt: '', timingReport: '', filename: 'subtitles', lastError: null, audioUrl: null, audioFile: null };
+        const api = window.location.origin;
+        let sse = null, timer = null, start = null;
+        let segments = [], currentLyricIdx = -1, isLyricsView = true;
+
+        // Configuration
+        const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
+        const SUPPORTED_FORMATS = {
+            'video/mp4': '.mp4',
+            'video/mpeg': '.mpeg',
+            'video/quicktime': '.mov',
+            'video/x-msvideo': '.avi',
+            'video/x-matroska': '.mkv',
+            'audio/mpeg': '.mp3',
+            'audio/mp3': '.mp3',
+            'audio/wav': '.wav',
+            'audio/x-wav': '.wav',
+            'audio/wave': '.wav',
+            'audio/m4a': '.m4a',
+            'audio/x-m4a': '.m4a',
+            'audio/flac': '.flac',
+            'audio/ogg': '.ogg'
+        };
+
+        // Elements
+        const $ = id => document.getElementById(id);
+        const el = {
+            navStudio: $('nav-studio'), navHistory: $('nav-history'),
+            studioView: $('studio-view'), historyView: $('history-view'),
+            uploadView: $('upload-view'), processingView: $('processing-view'), resultView: $('result-view'),
+            dropZone: $('drop-zone'), fileInput: $('file-input'), browseBtn: $('browse-btn'),
+            fileCard: $('file-card'), fileName: $('file-name'), generateBtn: $('generate-btn'),
+            downloadBtn: $('download-btn'), downloadAudioBtn: $('download-audio-btn'), downloadTimingBtn: $('download-timing-btn'),
+            copyBtn: $('copy-btn'), editor: $('editor'),
+            // Audio player
+            audioPlayerCard: $('audio-player-card'), audioEl: $('audio-el'),
+            playPauseBtn: $('play-pause-btn'), playIcon: $('play-icon'), pauseIcon: $('pause-icon'),
+            audioCurrent: $('audio-current'), audioDuration: $('audio-duration'),
+            audioProgressTrack: $('audio-progress-track'), audioProgressFill: $('audio-progress-fill'),
+            audioFilename: $('audio-filename'),
+            // Lyrics view
+            lyricsContainer: $('lyrics-container'), lyricsList: $('lyrics-list'),
+            lyricsViewBtn: $('lyrics-view-btn'), rawViewBtn: $('raw-view-btn'),
+            languageSelect: $('language-select'), languageHint: $('language-hint'),
+            wordsSlider: $('words-slider'), wordsValue: $('words-value'),
+            newBtn: $('new-btn'), statusText: $('status-text'), modelDisplay: $('model-display'),
+            fileDisplay: $('file-display'),
+            historyList: $('history-list'), noHistory: $('no-history'),
+            logBox: $('log-box'),
+            // Two-phase progress elements
+            uploadPhase: $('upload-phase'), processPhase: $('process-phase'),
+            uploadRing: $('upload-ring'), uploadPct: $('upload-pct'),
+            uploadTransferred: $('upload-transferred'), uploadSpeed: $('upload-speed'), uploadEta: $('upload-eta'),
+            processRing: $('process-ring'), processPct: $('process-pct'), processMsg: $('process-msg'),
+            processStageLabel: $('process-stage-label'),
+            phaseUploadBadge: $('phase-upload-badge'), phaseProcessBadge: $('phase-process-badge'),
+            elapsed: $('elapsed'),
+            pageTitle: $('page-title'), pageDesc: $('page-desc')
+        };
+
+        // Navigation
+        function setView(v) {
+            document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
+            if (v === 'studio') {
+                el.navStudio.classList.add('active');
+                el.studioView.classList.remove('hidden');
+                el.historyView.classList.add('hidden');
+                el.pageTitle.textContent = 'Studio';
+                el.pageDesc.textContent = 'Generate subtitles from audio & video';
+            } else {
+                el.navHistory.classList.add('active');
+                el.studioView.classList.add('hidden');
+                el.historyView.classList.remove('hidden');
+                el.pageTitle.textContent = 'History';
+                el.pageDesc.textContent = 'Your latest transcriptions done';
+                // Hide file info and download buttons when just browsing history
+                el.fileDisplay.classList.add('hidden');
+                el.downloadBtn.classList.add('hidden');
+                el.downloadBtn.classList.remove('flex');
+                el.downloadAudioBtn.classList.add('hidden');
+                el.downloadAudioBtn.classList.remove('flex');
+                renderHistory();
+            }
+        }
+
+        // File handling
+        function selectFile(file) {
+            if (!file) return;
+
+            // Client-side validation
+            const validation = validateFileClient(file);
+            if (!validation.valid) {
+                toast(validation.error, 'error');
+                el.fileInput.value = ''; // Reset input
+                return;
+            }
+
+            state.file = file;
+            state.filename = file.name.replace(/\.[^/.]+$/, '');
+            el.fileName.textContent = file.name;
+            el.fileCard.classList.remove('hidden');
+            if (el.statusText) el.statusText.textContent = 'File Ready';
+
+            // Show file info and estimated time
+            const sizeMB = Math.round(file.size / 1024 / 1024);
+            const estimatedTime = estimateProcessingTime(file.size);
+            toast(`File loaded: ${sizeMB}MB (Est. ${estimatedTime})`, 'success');
+        }
+
+        /**
+         * Client-side file validation
+         */
+        function validateFileClient(file) {
+            // Check file size
+            if (file.size === 0) {
+                return { valid: false, error: 'File is empty. Please select a valid file.' };
+            }
+
+            if (file.size > MAX_FILE_SIZE) {
+                const sizeMB = Math.round(file.size / 1024 / 1024);
+                const maxGB = Math.round(MAX_FILE_SIZE / 1024 / 1024 / 1024);
+                return { valid: false, error: `File too large (${sizeMB}MB). Maximum size is ${maxGB}GB.` };
+            }
+
+            // Check file type
+            const isSupported = Object.keys(SUPPORTED_FORMATS).includes(file.type);
+            const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+            const validExts = Object.values(SUPPORTED_FORMATS);
+
+            if (!isSupported && !validExts.includes(ext)) {
+                return {
+                    valid: false,
+                    error: `Unsupported format. Please use: MP4, MP3, WAV, MOV, AVI, M4A, FLAC, or OGG`
+                };
+            }
+
+            return { valid: true };
+        }
+
+        /**
+         * Estimate processing time based on file size
+         */
+        function estimateProcessingTime(bytes) {
+            const mb = bytes / 1024 / 1024;
+            // Rough estimate: ~30 seconds per 10MB
+            const minutes = Math.ceil((mb / 10) * 0.5);
+
+            if (minutes < 1) return '< 1 min';
+            if (minutes < 5) return `~${minutes} min`;
+            if (minutes < 30) return `${minutes}-${minutes + 5} min`;
+            return '30+ min';
+        }
+
+        function reset() {
+            // Clean up audio
+            if (state.audioUrl && state.audioUrl.startsWith('blob:')) {
+                URL.revokeObjectURL(state.audioUrl);
+            }
+            el.audioEl.pause();
+            el.audioEl.src = '';
+            el.audioPlayerCard.classList.add('hidden');
+            showPlayIcon();
+
+            state.file = null; state.srt = ''; state.timingReport = ''; state.audioUrl = null; state.audioFile = null;
+            segments = []; currentLyricIdx = -1;
+
+            el.fileInput.value = '';
+            el.fileCard.classList.add('hidden');
+            el.uploadView.classList.remove('hidden');
+            el.processingView.classList.add('hidden');
+            el.resultView.classList.add('hidden');
+            el.downloadBtn.classList.add('hidden');
+            el.downloadAudioBtn.classList.add('hidden');
+            el.downloadTimingBtn.classList.add('hidden');
+            el.fileDisplay.classList.add('hidden');
+            if (el.statusText) el.statusText.textContent = 'Ready';
+            setView('studio');
+        }
+
+        // Process
+        async function process() {
+            if (!state.file) return;
+            const jobId = generateUUID();
+
+            el.uploadView.classList.add('hidden');
+            el.processingView.classList.remove('hidden');
+            if (el.statusText) el.statusText.textContent = 'Processing';
+            el.logBox.innerHTML = '<div class="text-primary-600">[System] Starting...</div>';
+
+            // Create audio URL from the file for immediate playback
+            if (state.audioUrl && state.audioUrl.startsWith('blob:')) {
+                URL.revokeObjectURL(state.audioUrl);
+            }
+            state.audioUrl = URL.createObjectURL(state.file);
+            state.audioFile = null;
+
+            // Reset to upload phase
+            showUploadPhase();
+
+            start = Date.now();
+            startTimer();
+            connectSSE(jobId);
+
+            try {
+                log('Job: ' + jobId.substring(0, 8));
+                const words = parseInt(el.wordsSlider.value);
+                const language = el.languageSelect.value;
+
+                // Create FormData
+                const formData = new FormData();
+                formData.append('file', state.file);
+                formData.append('wordLimit', words);
+                formData.append('jobId', jobId);
+                formData.append('language', language);
+
+                if (language !== 'auto') {
+                    log(`Language: ${language}`);
+                }
+
+                // Upload with XMLHttpRequest for progress tracking
+                const data = await new Promise((resolve, reject) => {
+                    const xhr = new XMLHttpRequest();
+                    let uploadStartTime = Date.now();
+                    let lastLoaded = 0;
+                    let lastTime = uploadStartTime;
+
+                    // Track upload progress
+                    xhr.upload.addEventListener('progress', (e) => {
+                        if (e.lengthComputable) {
+                            const now = Date.now();
+                            const loaded = e.loaded;
+                            const total = e.total;
+                            const percent = Math.round((loaded / total) * 100);
+
+                            // Calculate speed (bytes per second)
+                            const timeDiff = (now - lastTime) / 1000; // seconds
+                            const bytesDiff = loaded - lastLoaded;
+
+                            // Update every 100ms minimum to avoid jitter
+                            if (timeDiff >= 0.1) {
+                                const speed = bytesDiff / timeDiff; // bytes/sec
+                                const speedMBps = (speed / (1024 * 1024)).toFixed(2);
+
+                                // Calculate remaining time
+                                const remaining = total - loaded;
+                                const etaSeconds = speed > 0 ? Math.ceil(remaining / speed) : 0;
+                                const etaFormatted = formatETA(etaSeconds);
+
+                                // Format loaded/total
+                                const loadedMB = (loaded / (1024 * 1024)).toFixed(1);
+                                const totalMB = (total / (1024 * 1024)).toFixed(1);
+
+                                // Update upload phase progress (0-100%)
+                                updateUploadProgress(percent, loadedMB, totalMB, speedMBps, etaFormatted);
+
+                                if (percent % 20 === 0 || percent === 100) {
+                                    log(`Upload: ${percent}% (${speedMBps} MB/s)`);
+                                }
+
+                                lastLoaded = loaded;
+                                lastTime = now;
+                            }
+                        }
+                    });
+
+                    xhr.upload.addEventListener('loadend', () => {
+                        const totalTime = ((Date.now() - uploadStartTime) / 1000).toFixed(1);
+                        log(`Upload complete in ${totalTime}s`);
+                        // Switch to processing phase
+                        showProcessPhase();
+                        updateProcessProgress(0, 'converting', 'Converting audio format...');
+                    });
+
+                    xhr.addEventListener('load', () => {
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            try {
+                                const response = JSON.parse(xhr.responseText);
+                                resolve(response);
+                            } catch (e) {
+                                reject(new Error('Invalid server response'));
+                            }
+                        } else {
+                            let errorMsg = 'Request failed';
+                            try {
+                                const errorData = JSON.parse(xhr.responseText);
+                                errorMsg = errorData.message || errorData.error || errorMsg;
+                            } catch {
+                                errorMsg = xhr.responseText || `Server returned ${xhr.status}`;
+                            }
+                            log('Server error: ' + errorMsg);
+                            reject(new Error(errorMsg));
+                        }
+                    });
+
+                    xhr.addEventListener('error', () => {
+                        reject(new Error('Network error. Please check your internet connection and try again.'));
+                    });
+
+                    xhr.addEventListener('timeout', () => {
+                        reject(new Error('Processing timeout. Your connection may be too slow or the file is too large.'));
+                    });
+
+                    xhr.addEventListener('abort', () => {
+                        reject(new Error('Upload cancelled'));
+                    });
+
+                    // 60 minute timeout
+                    xhr.timeout = 60 * 60 * 1000;
+
+                    xhr.open('POST', `${api}/api/transcribe`);
+                    xhr.send(formData);
+                });
+
+                if (data.srt) {
+                    state.srt = data.srt;
+                    state.timingReport = data.timingReport || '';
+                    state.lastError = null;
+
+                    // Store server-side audio filename; switch to persistent URL
+                    if (data.audioFile) {
+                        state.audioFile = data.audioFile;
+                        // Replace blob URL with server URL for persistence
+                        const serverAudioUrl = `${api}/api/audio/${data.audioFile}`;
+                        if (state.audioUrl && state.audioUrl.startsWith('blob:')) {
+                            URL.revokeObjectURL(state.audioUrl);
+                        }
+                        state.audioUrl = serverAudioUrl;
+                    }
+
+                    // Update Model Display Info
+                    const modelName = data.usedFallback ? 'Whisper (Fallback)' : 'Gemini 2.5 Pro';
+                    const modelColor = data.usedFallback ? 'text-amber-600' : 'text-slate-400';
+
+                    if (el.modelDisplay) {
+                        el.modelDisplay.textContent = modelName;
+                        el.modelDisplay.className = `text-xs mt-0.5 ${modelColor}`;
+                    }
+
+                    const langLabel = data.language && data.language !== 'auto' ? data.language : 'Auto-Detected';
+                    log(`Complete! Used: ${modelName} | Language: ${langLabel}`);
+                    if (data.usedFallback) {
+                        log(`Fallback reason: ${data.fallbackReason}`);
+                        toast(`Used Whisper Fallback: ${data.fallbackReason}`, 'info');
+                    }
+
+                    saveHistory(state.filename, data.srt, words, language, data.audioFile);
+                    showResult();
+
+                    if (!data.usedFallback) {
+                        toast('Subtitles generated successfully!', 'success');
+                    }
+                } else {
+                    throw new Error('Empty response from server');
+                }
+            } catch (e) {
+                state.lastError = e.message;
+                log('Error: ' + e.message);
+
+                // Enhanced error handling with user-friendly messages
+                const errorMsg = getUserFriendlyError(e.message);
+                toast(errorMsg, 'error');
+                updateProcessProgress(0, 'error', errorMsg);
+
+                // Show retry option for certain errors
+                if (shouldShowRetry(e.message)) {
+                    showRetryOption();
+                } else {
+                    setTimeout(reset, 5000);
+                }
+            } finally {
+                stopTimer();
+                disconnectSSE();
+            }
+        }
+
+        /**
+         * Convert technical errors to user-friendly messages
+         */
+        function getUserFriendlyError(errorMsg) {
+            if (errorMsg.includes('Rate limit')) {
+                return 'Too many requests. Please wait a few minutes and try again.';
+            }
+            if (errorMsg.includes('timeout') || errorMsg.includes('408')) {
+                return 'Processing timeout. Try a shorter file or reduce quality settings.';
+            }
+            if (errorMsg.includes('quota') || errorMsg.includes('429')) {
+                return 'API quota exceeded. Please try again in a few minutes.';
+            }
+            if (errorMsg.includes('Invalid file') || errorMsg.includes('Unsupported')) {
+                return errorMsg; // Already user-friendly
+            }
+            if (errorMsg.includes('File too large')) {
+                return errorMsg; // Already user-friendly
+            }
+            if (errorMsg.includes('network') || errorMsg.includes('fetch')) {
+                return 'Network error. Please check your connection and try again.';
+            }
+
+            // Default message for unknown errors
+            return 'An error occurred. Please try again or contact support if the issue persists.';
+        }
+
+        /**
+         * Determine if retry button should be shown
+         */
+        function shouldShowRetry(errorMsg) {
+            const retryableErrors = ['timeout', 'network', 'quota', 'Rate limit', '429', '408', '503'];
+            return retryableErrors.some(err => errorMsg.includes(err));
+        }
+
+        /**
+         * Show retry option in the UI
+         */
+        function showRetryOption() {
+            const retryHtml = `
+                <div class="mt-4 flex gap-3 justify-center">
+                    <button onclick="retry()" class="btn btn-primary px-6 py-2.5 text-sm">
+                        <svg class="w-4 h-4 inline mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Retry
+                    </button>
+                    <button onclick="reset()" class="btn btn-secondary px-6 py-2.5 text-sm">Cancel</button>
+                </div>
+            `;
+
+            const msgEl = document.getElementById('progress-msg');
+            if (msgEl && !msgEl.nextElementSibling?.querySelector('button')) {
+                msgEl.insertAdjacentHTML('afterend', retryHtml);
+            }
+        }
+
+        /**
+         * Retry the last failed operation
+         */
+        window.retry = function () {
+            if (state.file) {
+                // Remove retry buttons
+                const retryBtns = document.querySelectorAll('#processing-view button');
+                retryBtns.forEach(btn => btn.remove());
+
+                // Retry processing
+                setTimeout(() => process(), 500);
+            }
+        };
+
+        // --- SRT PARSING ---
+        function parseSrtSegments(srtText) {
+            const segs = [];
+            const blocks = srtText.trim().split(/\r?\n\r?\n/);
+            for (const block of blocks) {
+                const lines = block.trim().split(/\r?\n/);
+                if (lines.length >= 3) {
+                    // const m = lines[1].match(/(\d{2}:\d{2}:\d{2}[,.]?\d{0,3})\s*-->\s * (\d{ 2}: \d{ 2}: \d{ 2}[,.] ?\d{ 0, 3}) /);
+                    const m = lines[1].match(/(\d{2}:\d{2}:\d{2}[,.]?\d{0,3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,.]?\d{0,3})/);
+                    if (m) {
+                        segs.push({
+                            index: parseInt(lines[0]),
+                            startTime: m[1],
+                            endTime: m[2],
+                            startSec: parseSrtTs(m[1]),
+                            endSec: parseSrtTs(m[2]),
+                            text: lines.slice(2).join(' ').trim()
+                        });
+                    }
+                }
+            }
+            return segs;
+        }
+
+        function parseSrtTs(ts) {
+            ts = ts.replace(',', '.');
+            const p = ts.split(':');
+            return parseInt(p[0]) * 3600 + parseInt(p[1]) * 60 + parseFloat(p[2]);
+        }
+
+        function fmtAudioTime(sec) {
+            if (!sec || isNaN(sec)) return '0:00';
+            const m = Math.floor(sec / 60);
+            const s = Math.floor(sec % 60);
+            return `${m}:${String(s).padStart(2, '0')}`;
+        }
+
+        // --- LYRICS RENDERING ---
+        function renderLyrics(segs) {
+            const list = el.lyricsList;
+            list.innerHTML = '';
+
+            if (!segs || segs.length === 0) {
+                list.innerHTML = '<p class="text-center text-slate-400 py-12">No subtitle segments found</p>';
+                return;
+            }
+
+            segs.forEach((seg, i) => {
+                const div = document.createElement('div');
+                div.className = 'lyric-line';
+                div.dataset.idx = i;
+                div.innerHTML = `<span class="lyric-ts">${seg.startTime.replace(',', '.')}</span><p class="mt-0.5 leading-relaxed">${seg.text}</p>`;
+                div.addEventListener('click', () => seekToLyric(seg.startSec));
+                list.appendChild(div);
+            });
+        }
+
+        // --- AUDIO PLAYER ---
+        function initAudioPlayer(url, filename) {
+            const audio = el.audioEl;
+
+            // Remove old listeners by replacing the element's event handlers
+            audio.onloadedmetadata = null;
+            audio.ontimeupdate = null;
+            audio.onended = null;
+            audio.onplay = null;
+            audio.onpause = null;
+
+            audio.src = url;
+            el.audioPlayerCard.classList.remove('hidden');
+            el.audioFilename.textContent = filename || '';
+            el.audioCurrent.textContent = '0:00';
+            el.audioDuration.textContent = '0:00';
+            el.audioProgressFill.style.width = '0%';
+            showPlayIcon();
+
+            audio.onloadedmetadata = () => {
+                el.audioDuration.textContent = fmtAudioTime(audio.duration);
+            };
+
+            audio.ontimeupdate = () => {
+                const t = audio.currentTime;
+                el.audioCurrent.textContent = fmtAudioTime(t);
+
+                if (audio.duration) {
+                    el.audioProgressFill.style.width = (t / audio.duration * 100) + '%';
+                }
+
+                // Find active lyric segment
+                let idx = -1;
+                for (let i = 0; i < segments.length; i++) {
+                    if (t >= segments[i].startSec && t < segments[i].endSec) {
+                        idx = i;
+                        break;
+                    }
+                }
+                // If between segments, keep last active or find nearest
+                if (idx === -1 && segments.length > 0) {
+                    for (let i = segments.length - 1; i >= 0; i--) {
+                        if (t >= segments[i].startSec) {
+                            idx = i;
+                            break;
+                        }
+                    }
+                }
+
+                if (idx !== currentLyricIdx) {
+                    highlightLyric(idx);
+                    currentLyricIdx = idx;
+                }
+            };
+
+            audio.onended = () => showPlayIcon();
+            audio.onplay = () => showPauseIcon();
+            audio.onpause = () => showPlayIcon();
+        }
+
+        function showPlayIcon() {
+            el.playIcon.classList.remove('hidden');
+            el.pauseIcon.classList.add('hidden');
+        }
+
+        function showPauseIcon() {
+            el.playIcon.classList.add('hidden');
+            el.pauseIcon.classList.remove('hidden');
+        }
+
+        function togglePlayPause() {
+            const audio = el.audioEl;
+            if (!audio.src) return;
+            if (audio.paused) {
+                audio.play();
+            } else {
+                audio.pause();
+            }
+        }
+
+        function seekToLyric(seconds) {
+            const audio = el.audioEl;
+            if (!audio.src) return;
+            audio.currentTime = seconds;
+            if (audio.paused) audio.play();
+        }
+
+        function seekAudioByClick(e) {
+            const audio = el.audioEl;
+            if (!audio.duration) return;
+            const rect = el.audioProgressTrack.getBoundingClientRect();
+            const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            audio.currentTime = pct * audio.duration;
+        }
+
+        // --- LYRICS HIGHLIGHT + AUTO-SCROLL ---
+        function highlightLyric(activeIdx) {
+            const lines = el.lyricsList.querySelectorAll('.lyric-line');
+            lines.forEach((line, i) => {
+                line.classList.remove('active', 'past');
+                if (activeIdx >= 0) {
+                    if (i === activeIdx) {
+                        line.classList.add('active');
+                        // Smooth scroll to center the active line
+                        line.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    } else if (i < activeIdx) {
+                        line.classList.add('past');
+                    }
+                }
+            });
+        }
+
+        // --- VIEW TOGGLE (Lyrics / Raw SRT) ---
+        function showLyricsView() {
+            isLyricsView = true;
+            el.lyricsContainer.classList.remove('hidden');
+            el.editor.classList.add('hidden');
+            el.lyricsViewBtn.classList.add('bg-white', 'dark:bg-dark-surface', 'text-primary-600', 'dark:text-primary-400', 'shadow-sm');
+            el.lyricsViewBtn.classList.remove('text-slate-500', 'dark:text-slate-400');
+            el.rawViewBtn.classList.remove('bg-white', 'dark:bg-dark-surface', 'text-primary-600', 'dark:text-primary-400', 'shadow-sm');
+            el.rawViewBtn.classList.add('text-slate-500', 'dark:text-slate-400');
+        }
+
+        function showRawView() {
+            isLyricsView = false;
+            el.lyricsContainer.classList.add('hidden');
+            el.editor.classList.remove('hidden');
+            el.rawViewBtn.classList.add('bg-white', 'dark:bg-dark-surface', 'text-primary-600', 'dark:text-primary-400', 'shadow-sm');
+            el.rawViewBtn.classList.remove('text-slate-500', 'dark:text-slate-400');
+            el.lyricsViewBtn.classList.remove('bg-white', 'dark:bg-dark-surface', 'text-primary-600', 'dark:text-primary-400', 'shadow-sm');
+            el.lyricsViewBtn.classList.add('text-slate-500', 'dark:text-slate-400');
+        }
+
+        function showResult() {
+            el.uploadView.classList.add('hidden');
+            el.processingView.classList.add('hidden');
+            el.resultView.classList.remove('hidden');
+
+            // Parse SRT into segments and render lyrics view
+            segments = parseSrtSegments(state.srt);
+            currentLyricIdx = -1;
+            renderLyrics(segments);
+
+            // Raw editor (hidden by default)
+            el.editor.value = state.srt.replace(/,\d{3}/g, '');
+
+            // Initialize audio player if audio is available
+            if (state.audioUrl) {
+                initAudioPlayer(state.audioUrl, state.filename);
+                el.downloadAudioBtn.classList.remove('hidden');
+                el.downloadAudioBtn.classList.add('flex');
+            } else {
+                el.audioPlayerCard.classList.add('hidden');
+                el.downloadAudioBtn.classList.add('hidden');
+            }
+
+            // Default to lyrics view
+            showLyricsView();
+
+            el.downloadBtn.classList.remove('hidden');
+            el.downloadBtn.classList.add('flex');
+
+            if (state.timingReport) {
+                el.downloadTimingBtn.classList.remove('hidden');
+                el.downloadTimingBtn.classList.add('flex');
+            } else {
+                el.downloadTimingBtn.classList.add('hidden');
+            }
+            el.fileDisplay.textContent = state.filename + '.srt';
+            el.fileDisplay.classList.remove('hidden');
+            if (el.statusText) el.statusText.textContent = 'Complete';
+        }
+
+        // SSE
+        function connectSSE(jobId) {
+            disconnectSSE();
+            sse = new EventSource(`${api}/api/progress/${jobId}`);
+            sse.onmessage = e => {
+                try {
+                    const d = JSON.parse(e.data);
+                    // Map server progress to processing phase (10-100 from server -> 0-100 for display)
+                    if (d.stage !== 'connected' && d.stage !== 'upload') {
+                        // Ensure we're in process phase
+                        if (!el.processPhase.classList.contains('hidden')) {
+                            // Server sends 10-100, we display as 0-100
+                            const displayPct = Math.max(0, Math.min(100, (d.percent - 10) * (100 / 90)));
+                            updateProcessProgress(displayPct, d.stage, d.message);
+                        }
+                        if (d.stage !== 'done') log(d.message);
+                    }
+                } catch { }
+            };
+        }
+
+        function disconnectSSE() { if (sse) { sse.close(); sse = null; } }
+
+        // Two-phase progress functions
+        function showUploadPhase() {
+            el.uploadPhase.classList.remove('hidden');
+            el.processPhase.classList.add('hidden');
+            el.phaseUploadBadge.classList.remove('bg-slate-100', 'text-slate-400');
+            el.phaseUploadBadge.classList.add('bg-emerald-100', 'text-emerald-700');
+            el.phaseProcessBadge.classList.remove('bg-primary-100', 'text-primary-700');
+            el.phaseProcessBadge.classList.add('bg-slate-100', 'text-slate-400');
+            // Reset upload ring
+            el.uploadRing.style.strokeDashoffset = 439.82;
+            el.uploadPct.textContent = '0%';
+            el.uploadTransferred.textContent = '0 MB';
+            el.uploadSpeed.textContent = '-- MB/s';
+            el.uploadEta.textContent = '--';
+        }
+
+        function showProcessPhase() {
+            el.uploadPhase.classList.add('hidden');
+            el.processPhase.classList.remove('hidden');
+            // Update badges
+            el.phaseUploadBadge.classList.remove('bg-emerald-100', 'text-emerald-700');
+            el.phaseUploadBadge.classList.add('bg-emerald-100', 'text-emerald-600');
+            el.phaseUploadBadge.querySelector('span').textContent = 'Uploaded ✓';
+            el.phaseProcessBadge.classList.remove('bg-slate-100', 'text-slate-400');
+            el.phaseProcessBadge.classList.add('bg-primary-100', 'text-primary-700');
+            // Reset process ring
+            el.processRing.style.strokeDashoffset = 439.82;
+            el.processPct.textContent = '0%';
+            resetProcessStages();
+        }
+
+        function updateUploadProgress(percent, loadedMB, totalMB, speedMBps, eta) {
+            // Update ring (circumference = 2 * π * 70 = 439.82)
+            const offset = 439.82 - (439.82 * percent / 100);
+            el.uploadRing.style.strokeDashoffset = offset;
+            el.uploadPct.textContent = percent + '%';
+            el.uploadTransferred.textContent = `${loadedMB} / ${totalMB} MB`;
+            el.uploadSpeed.textContent = `${speedMBps} MB/s`;
+            el.uploadEta.textContent = eta;
+        }
+
+        function updateProcessProgress(percent, stage, msg) {
+            // Update ring
+            const offset = 439.82 - (439.82 * percent / 100);
+            el.processRing.style.strokeDashoffset = offset;
+            el.processPct.textContent = Math.round(percent) + '%';
+
+            // Update stage label
+            const labels = {
+                converting: 'CONVERTING',
+                uploading: 'UPLOADING TO AI',
+                processing: 'PROCESSING',
+                transcribing: 'TRANSCRIBING',
+                formatting: 'FORMATTING',
+                complete: 'COMPLETE!',
+                error: 'ERROR'
+            };
+            el.processStageLabel.textContent = labels[stage] || 'PROCESSING';
+            el.processMsg.textContent = msg;
+
+            updateProcessStages(stage);
+        }
+
+        function updateProcessStages(current) {
+            const order = ['converting', 'uploading-ai', 'transcribing', 'complete'];
+            const stageMap = { converting: 0, uploading: 1, processing: 2, transcribing: 2, formatting: 2, complete: 3, done: 3 };
+            const idx = stageMap[current] ?? -1;
+
+            document.querySelectorAll('.stage-mini').forEach(s => {
+                const i = order.indexOf(s.dataset.stage);
+                s.classList.remove('active', 'complete');
+                if (i < idx) s.classList.add('complete');
+                else if (i === idx) s.classList.add('active');
+            });
+        }
+
+        function resetProcessStages() {
+            document.querySelectorAll('.stage-mini').forEach(s => {
+                s.classList.remove('active', 'complete');
+            });
+        }
+
+        function startTimer() {
+            stopTimer();
+            const update = () => {
+                const s = Math.floor((Date.now() - start) / 1000);
+                el.elapsed.textContent = `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+            };
+            update();
+            timer = setInterval(update, 1000);
+        }
+
+        function stopTimer() { if (timer) { clearInterval(timer); timer = null; } }
+
+        function log(msg) {
+            const d = document.createElement('div');
+            d.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            el.logBox.appendChild(d);
+            el.logBox.scrollTop = el.logBox.scrollHeight;
+        }
+
+        // Format ETA in human readable format
+        function formatETA(seconds) {
+            if (seconds <= 0) return 'calculating...';
+            if (seconds < 60) return `${seconds}s`;
+            if (seconds < 3600) {
+                const mins = Math.floor(seconds / 60);
+                const secs = seconds % 60;
+                return `${mins}m ${secs}s`;
+            }
+            const hours = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            return `${hours}h ${mins}m`;
+        }
+
+
+        // History - Server-side storage with localStorage fallback
+        async function getHistory() {
+            try {
+                const res = await fetch(`${api}/api/history`);
+                if (!res.ok) throw new Error('Failed to fetch history');
+                return await res.json();
+            } catch (error) {
+                console.error('Error fetching history from server, using localStorage fallback:', error);
+                // Fallback to localStorage
+                try {
+                    return JSON.parse(localStorage.getItem('srt_history') || '[]');
+                } catch {
+                    return [];
+                }
+            }
+        }
+
+        async function saveHistory(name, content, words, language = 'auto', audioFile = null) {
+            try {
+                const res = await fetch(`${api}/api/history`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, content, words, language, audioFile })
+                });
+
+                if (!res.ok) throw new Error('Failed to save history');
+
+                // Also save to localStorage as backup
+                const h = JSON.parse(localStorage.getItem('srt_history') || '[]');
+                h.unshift({ id: Date.now(), name, content, words, language, audioFile, date: new Date().toISOString() });
+                localStorage.setItem('srt_history', JSON.stringify(h.slice(0, 50)));
+
+                return true;
+            } catch (error) {
+                console.error('Error saving history to server, using localStorage fallback:', error);
+                try {
+                    const h = JSON.parse(localStorage.getItem('srt_history') || '[]');
+                    h.unshift({ id: Date.now(), name, content, words, language, audioFile, date: new Date().toISOString() });
+                    localStorage.setItem('srt_history', JSON.stringify(h.slice(0, 50)));
+                    return true;
+                } catch {
+                    return false;
+                }
+            }
+        }
+
+        async function renderHistory() {
+            const h = await getHistory();
+            el.historyList.innerHTML = '';
+            el.noHistory.classList.toggle('hidden', h.length > 0);
+            h.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'card p-4 flex items-center justify-between hover:shadow-md transition-shadow';
+                div.innerHTML = `
+                        <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-xl bg-gradient-to-br ${item.audioFile ? 'from-emerald-100 to-emerald-200 dark:from-emerald-900/40 dark:to-emerald-800/40' : 'from-primary-100 to-primary-200 dark:from-primary-900/40 dark:to-primary-800/40'} flex items-center justify-center">
+                            ${item.audioFile
+                        ? '<svg class="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" /></svg>'
+                        : '<span class="text-primary-600 dark:text-primary-400 text-xs font-bold">SRT</span>'}
+                        </div>
+                        <div>
+                            <p class="text-base font-semibold text-slate-800 dark:text-white">${item.name}</p>
+                            <p class="text-sm text-slate-400 dark:text-slate-500">${new Date(item.date).toLocaleDateString()} • ${item.words} words/line${item.language && item.language !== 'auto' ? ` • ${item.language}` : ''}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="loadHistory(${item.id})" class="btn btn-secondary px-5 py-2 text-sm">Open</button>
+                        <button onclick="deleteHistory(${item.id})" class="px-4 py-2 text-sm font-semibold text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-colors" title="Delete">
+                            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                            </svg>
+                        </button>
+                    </div>
+                `;
+                el.historyList.appendChild(div);
+            });
+        }
+
+        window.loadHistory = async (id) => {
+            const h = await getHistory();
+            const item = h.find(x => x.id === id);
+            if (item) {
+                state.srt = item.content;
+                state.filename = item.name;
+
+                // Restore audio for playback
+                if (state.audioUrl && state.audioUrl.startsWith('blob:')) {
+                    URL.revokeObjectURL(state.audioUrl);
+                }
+                if (item.audioFile) {
+                    state.audioUrl = `${api}/api/audio/${item.audioFile}`;
+                    state.audioFile = item.audioFile;
+                } else {
+                    state.audioUrl = null;
+                    state.audioFile = null;
+                }
+
+                // Restore language setting if saved
+                if (item.language) {
+                    el.languageSelect.value = item.language;
+                    el.languageSelect.dispatchEvent(new Event('change'));
+                }
+
+                setView('studio');
+                showResult();
+                const langInfo = item.language && item.language !== 'auto' ? ` (${item.language})` : '';
+                const audioInfo = item.audioFile ? ' with audio' : '';
+                toast(`Loaded from history${langInfo}${audioInfo}`, 'success');
+            }
+        };
+
+        window.deleteHistory = async (id) => {
+            if (confirm('Delete this history item?')) {
+                try {
+                    const res = await fetch(`${api}/api/history/${id}`, { method: 'DELETE' });
+                    if (!res.ok) throw new Error('Failed to delete history item');
+
+                    // Also remove from localStorage
+                    try {
+                        const h = JSON.parse(localStorage.getItem('srt_history') || '[]');
+                        const filtered = h.filter(x => x.id !== id);
+                        localStorage.setItem('srt_history', JSON.stringify(filtered));
+                    } catch (e) {
+                        console.warn('Failed to update localStorage:', e);
+                    }
+
+                    await renderHistory();
+                    toast('History item deleted', 'success');
+                } catch (error) {
+                    console.error('Error deleting history item:', error);
+                    // Fallback to localStorage only
+                    try {
+                        const h = JSON.parse(localStorage.getItem('srt_history') || '[]');
+                        const filtered = h.filter(x => x.id !== id);
+                        localStorage.setItem('srt_history', JSON.stringify(filtered));
+                        await renderHistory();
+                        toast('History item deleted (local only)', 'info');
+                    } catch (e) {
+                        toast('Failed to delete history item', 'error');
+                    }
+                }
+            }
+        };
+
+        window.clearHistory = async () => {
+            if (confirm('Clear all history?')) {
+                try {
+                    const res = await fetch(`${api}/api/history`, { method: 'DELETE' });
+                    if (!res.ok) throw new Error('Failed to clear history');
+
+                    // Also clear localStorage
+                    localStorage.removeItem('srt_history');
+
+                    await renderHistory();
+                    toast('History cleared', 'info');
+                } catch (error) {
+                    console.error('Error clearing history:', error);
+                    // Fallback to localStorage only
+                    localStorage.removeItem('srt_history');
+                    await renderHistory();
+                    toast('History cleared (local only)', 'info');
+                }
+            }
+        };
+
+        // Utils
+        function toast(msg, type = 'info') {
+            const colors = { success: 'bg-emerald-500', error: 'bg-red-500', info: 'bg-slate-700' };
+            const t = document.createElement('div');
+            t.className = `toast ${colors[type]} px-5 py-3 rounded-xl text-sm font-medium text-white shadow-lg`;
+            t.textContent = msg;
+            $('toasts').appendChild(t);
+            setTimeout(() => t.remove(), 3000);
+        }
+
+        function download() {
+            // Ensure SRT uses CRLF line endings for Premiere Pro compatibility
+            const srtContent = state.srt.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n');
+
+            // Add UTF-8 BOM for better Premiere Pro compatibility
+            const BOM = '\uFEFF';
+            const blob = new Blob([BOM + srtContent], {
+                type: 'text/plain;charset=utf-8'
+            });
+
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = state.filename + '.srt';
+            a.click();
+            toast('SRT downloaded', 'success');
+        }
+
+        function downloadTiming() {
+            if (!state.timingReport) {
+                toast('No timing report available', 'error');
+                return;
+            }
+            const blob = new Blob([state.timingReport], { type: 'text/plain;charset=utf-8' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = state.filename + '_timing_report.txt';
+            a.click();
+            toast('Timing report downloaded', 'success');
+        }
+
+        function downloadAudio() {
+            if (!state.audioUrl) {
+                toast('No audio available to download', 'error');
+                return;
+            }
+            const a = document.createElement('a');
+            a.href = state.audioUrl;
+            a.download = state.filename + '.mp3';
+            // For server URLs, fetch as blob to force download
+            if (state.audioUrl.startsWith('blob:')) {
+                a.click();
+                toast('Audio downloaded', 'success');
+            } else {
+                fetch(state.audioUrl)
+                    .then(res => res.blob())
+                    .then(blob => {
+                        const url = URL.createObjectURL(blob);
+                        a.href = url;
+                        a.click();
+                        setTimeout(() => URL.revokeObjectURL(url), 1000);
+                        toast('Audio downloaded', 'success');
+                    })
+                    .catch(() => toast('Failed to download audio', 'error'));
+            }
+        }
+
+        async function copy() {
+            try { await navigator.clipboard.writeText(state.srt); toast('Copied to clipboard', 'success'); }
+            catch { toast('Copy failed', 'error'); }
+        }
+
+        // Events
+        el.navStudio.onclick = () => setView('studio');
+        el.navHistory.onclick = () => setView('history');
+        el.newBtn.onclick = reset;
+        el.dropZone.onclick = () => el.fileInput.click();
+        el.browseBtn.onclick = e => { e.stopPropagation(); el.fileInput.click(); };
+        el.fileInput.onchange = e => selectFile(e.target.files[0]);
+        el.dropZone.ondragover = e => { e.preventDefault(); el.dropZone.classList.add('drop-active'); };
+        el.dropZone.ondragleave = () => el.dropZone.classList.remove('drop-active');
+        el.dropZone.ondrop = e => { e.preventDefault(); el.dropZone.classList.remove('drop-active'); selectFile(e.dataTransfer.files[0]); };
+
+        // Init
+        el.wordsSlider.oninput = e => el.wordsValue.textContent = e.target.value;
+        el.languageSelect.onchange = e => {
+            const val = e.target.value;
+            if (val === 'auto') {
+                el.languageHint.textContent = 'Auto-detect transcribes in the spoken language';
+            } else {
+                el.languageHint.textContent = `Subtitles will be transcribed in ${val}`;
+            }
+        };
+        el.generateBtn.onclick = process;
+        el.downloadBtn.onclick = download;
+        el.downloadAudioBtn.onclick = downloadAudio;
+        el.downloadTimingBtn.onclick = downloadTiming;
+        el.copyBtn.onclick = copy;
+
+        // Audio player events
+        el.playPauseBtn.onclick = togglePlayPause;
+        el.audioProgressTrack.onclick = seekAudioByClick;
+
+        // View toggle events
+        el.lyricsViewBtn.onclick = showLyricsView;
+        el.rawViewBtn.onclick = showRawView;
+
+        // Keyboard shortcuts for audio player
+        document.addEventListener('keydown', (e) => {
+            // Only handle shortcuts when result view is visible and not typing in an input
+            const isResultVisible = !el.resultView.classList.contains('hidden');
+            const isInputFocused = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
+            if (!isResultVisible || isInputFocused) return;
+
+            const audio = el.audioEl;
+
+            switch (e.code) {
+                case 'Space':
+                    e.preventDefault();
+                    togglePlayPause();
+                    break;
+                case 'ArrowLeft':
+                    e.preventDefault();
+                    if (audio.src) audio.currentTime = Math.max(0, audio.currentTime - 5);
+                    break;
+                case 'ArrowRight':
+                    e.preventDefault();
+                    if (audio.src) audio.currentTime = Math.min(audio.duration, audio.currentTime + 5);
+                    break;
+                case 'KeyL':
+                    if (!e.ctrlKey && !e.metaKey) showLyricsView();
+                    break;
+                case 'KeyR':
+                    if (!e.ctrlKey && !e.metaKey) showRawView();
+                    break;
+            }
+        });
+
+        // Load history on start
+        renderHistory();
+
+        // --- DARK MODE ---
+        const darkModeToggle = $('dark-mode-toggle');
+        const sunIcon = $('sun-icon');
+        const moonIcon = $('moon-icon');
+
+        const htmlRoot = document.documentElement;
+
+        function applyDarkMode(isDark) {
+            if (isDark) {
+                htmlRoot.classList.add('dark');
+                sunIcon.classList.remove('hidden');
+                moonIcon.classList.add('hidden');
+
+            } else {
+                htmlRoot.classList.remove('dark');
+                sunIcon.classList.add('hidden');
+                moonIcon.classList.remove('hidden');
+
+            }
+        }
+
+        // Initialize dark mode from localStorage or system preference
+        const savedTheme = localStorage.getItem('srt_theme');
+        if (savedTheme === 'dark') {
+            applyDarkMode(true);
+        } else if (savedTheme === 'light') {
+            applyDarkMode(false);
+        } else {
+            // Auto-detect from system preference
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            applyDarkMode(prefersDark);
+        }
+
+        darkModeToggle.onclick = () => {
+            const isDark = htmlRoot.classList.contains('dark');
+            applyDarkMode(!isDark);
+            localStorage.setItem('srt_theme', !isDark ? 'dark' : 'light');
+        };
+
+        // Listen for system theme changes (when no saved preference)
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+            if (!localStorage.getItem('srt_theme')) {
+                applyDarkMode(e.matches);
+            }
+        });
+
+        console.log('SRT Studio initialized');
+    </script>
+</body>
+
+</html>
