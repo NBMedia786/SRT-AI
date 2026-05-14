@@ -53,3 +53,7 @@ voice_output_verification.*
 *_output.srt
 *_verification.csv
 *_verification.json
+
+# Working folders — local audio + generated SRTs
+input/
+output/

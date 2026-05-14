@@ -26,13 +26,21 @@
                             600: '#4f46e5',
                             700: '#4338ca'
                         },
+                        // Neutral zinc palette — pure grayscale, no blue undertones.
+                        // bg = deepest (page), surface = mid (sidebar/topbar/inputs), card = highest
                         dark: {
-                            bg: '#0f172a',
-                            surface: '#1e293b',
-                            card: '#1e293b',
-                            border: '#334155',
-                            text: '#e2e8f0',
-                            muted: '#94a3b8'
+                            bg: '#0a0a0b',
+                            surface: '#131316',
+                            card: '#1a1a1d',
+                            border: '#26262a',
+                            text: '#fafafa',
+                            muted: '#a1a1aa'
+                        },
+                        // Soft off-white light theme — less harsh than pure white
+                        app: {
+                            bg: '#f4f4f5',
+                            surface: '#ffffff',
+                            border: '#e4e4e7'
                         }
                     }
                 }
@@ -42,41 +50,48 @@
     <style>
         * {
             scrollbar-width: thin;
-            scrollbar-color: #cbd5e1 #f1f5f9;
+            scrollbar-color: #d4d4d8 transparent;
         }
 
         ::-webkit-scrollbar {
-            width: 8px;
+            width: 10px;
+            height: 10px;
         }
 
         ::-webkit-scrollbar-track {
-            background: #f1f5f9;
+            background: transparent;
         }
 
         ::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 4px;
+            background: #d4d4d8;
+            border-radius: 999px;
+            border: 2px solid transparent;
+            background-clip: padding-box;
         }
 
         ::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
+            background: #a1a1aa;
+            background-clip: padding-box;
+            border: 2px solid transparent;
         }
 
         /* Dark mode scrollbars */
         .dark * {
-            scrollbar-color: #475569 #1e293b;
+            scrollbar-color: #3f3f46 transparent;
         }
 
         .dark ::-webkit-scrollbar-track {
-            background: #1e293b;
+            background: transparent;
         }
 
         .dark ::-webkit-scrollbar-thumb {
-            background: #475569;
+            background: #3f3f46;
+            background-clip: padding-box;
+            border: 2px solid transparent;
         }
 
         .dark ::-webkit-scrollbar-thumb:hover {
-            background: #64748b;
+            background: #52525b;
         }
 
         /* Range slider */
@@ -87,48 +102,62 @@
             cursor: pointer;
         }
 
-        input[type="range"]::-webkit-slider-track {
+        input[type="range"] {
+            height: 22px;
+            --range-fill: 50%;
+            --range-track: #e2e8f0;
+            background: linear-gradient(90deg, #6366f1 0%, #818cf8 var(--range-fill), var(--range-track) var(--range-fill), var(--range-track) 100%);
+            border-radius: 999px;
+            transition: --range-fill 0.15s ease;
+        }
+
+        input[type="range"]::-webkit-slider-runnable-track {
             height: 8px;
-            background: #e2e8f0;
+            background: transparent;
             border-radius: 4px;
         }
 
         input[type="range"]::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 20px;
-            height: 20px;
-            background: #4f46e5;
+            width: 18px;
+            height: 18px;
+            background: #fff;
+            border: 2px solid #6366f1;
             border-radius: 50%;
-            margin-top: -6px;
-            box-shadow: 0 2px 6px rgba(79, 70, 229, 0.4);
+            margin-top: -5px;
+            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.5), 0 0 0 4px rgba(99, 102, 241, 0.08);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+            cursor: grab;
         }
 
-        input[type="range"]::-webkit-slider-thumb:hover {
-            background: #4338ca;
-            transform: scale(1.1);
+        input[type="range"]:hover::-webkit-slider-thumb,
+        input[type="range"]:focus::-webkit-slider-thumb {
+            transform: scale(1.15);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.65), 0 0 0 6px rgba(99, 102, 241, 0.12);
+        }
+
+        input[type="range"]:active::-webkit-slider-thumb {
+            cursor: grabbing;
         }
 
         input[type="range"]::-moz-range-track {
             height: 8px;
-            background: #e2e8f0;
+            background: transparent;
             border-radius: 4px;
         }
 
         input[type="range"]::-moz-range-thumb {
-            width: 20px;
-            height: 20px;
-            background: #4f46e5;
+            width: 18px;
+            height: 18px;
+            background: #fff;
+            border: 2px solid #6366f1;
             border-radius: 50%;
-            border: none;
+            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.5);
         }
 
         /* Dark mode range slider */
-        .dark input[type="range"]::-webkit-slider-track {
-            background: #334155;
-        }
-
-        .dark input[type="range"]::-moz-range-track {
-            background: #334155;
+        .dark input[type="range"] {
+            --range-track: #1e293b;
         }
 
         /* Button styles */
@@ -145,18 +174,18 @@
         .btn-primary {
             background: linear-gradient(135deg, #6366f1, #4f46e5);
             color: white;
-            box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);
+            box-shadow: 0 2px 6px rgba(79, 70, 229, 0.22), 0 8px 24px -8px rgba(79, 70, 229, 0.35);
         }
 
         .btn-primary:hover {
-            box-shadow: 0 6px 20px rgba(79, 70, 229, 0.45);
+            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3), 0 12px 32px -10px rgba(79, 70, 229, 0.5);
             transform: translateY(-1px);
         }
 
         .btn-secondary {
             background: white;
-            color: #334155;
-            border: 2px solid #e2e8f0;
+            color: #1e293b;
+            border: 1px solid #e2e8f0;
         }
 
         .btn-secondary:hover {
@@ -166,29 +195,29 @@
 
         /* Dark mode buttons */
         .dark .btn-secondary {
-            background: #1e293b;
-            color: #e2e8f0;
-            border-color: #475569;
+            background: #1a1a1d;
+            color: #fafafa;
+            border-color: #26262a;
         }
 
         .dark .btn-secondary:hover {
-            border-color: #64748b;
-            background: #334155;
+            border-color: #3f3f46;
+            background: #232327;
         }
 
         /* Card */
         .card {
-            background: white;
-            border: 1px solid #e2e8f0;
-            border-radius: 16px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            background: #ffffff;
+            border: 1px solid #e4e4e7;
+            border-radius: 14px;
+            box-shadow: 0 1px 2px rgba(24, 24, 27, 0.04), 0 1px 1px rgba(24, 24, 27, 0.03);
         }
 
         /* Dark mode card */
         .dark .card {
-            background: #1e293b;
-            border-color: #334155;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+            background: #1a1a1d;
+            border-color: #26262a;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.02) inset;
         }
 
         /* Dark mode: fix dynamically-generated text inside cards */
@@ -203,12 +232,13 @@
 
         /* Drop zone */
         .drop-zone {
-            border: 2px dashed #cbd5e1;
-            background: #fafbfc;
+            border: 2px dashed #d4d4d8;
+            background: #fafafa;
+            transition: border-color 0.2s ease, background-color 0.2s ease;
         }
 
         .drop-zone:hover {
-            border-color: #6366f1;
+            border-color: #818cf8;
             background: #f5f3ff;
         }
 
@@ -219,18 +249,18 @@
 
         /* Dark mode drop zone */
         .dark .drop-zone {
-            border-color: #475569;
-            background: #0f172a;
+            border-color: #3f3f46;
+            background: rgba(20, 20, 23, 0.5);
         }
 
         .dark .drop-zone:hover {
-            border-color: #818cf8;
-            background: #1e1b4b;
+            border-color: #34d399;
+            background: rgba(16, 185, 129, 0.05);
         }
 
         .dark .drop-active {
-            border-color: #818cf8 !important;
-            background: #1e1b4b !important;
+            border-color: #10b981 !important;
+            background: rgba(16, 185, 129, 0.08) !important;
         }
 
         /* Progress ring */
@@ -296,81 +326,119 @@
         }
 
         .lyric-line {
-            padding: 10px 20px;
-            border-radius: 12px;
+            display: flex;
+            align-items: flex-start;
+            gap: 14px;
+            padding: 11px 16px;
+            margin: 1px 0;
+            border-radius: 10px;
             cursor: pointer;
-            transition: all 0.35s cubic-bezier(.4, 0, .2, 1);
-            color: #94a3b8;
+            transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+            color: #64748b;
             font-size: 15px;
-            line-height: 1.7;
-            border-left: 3px solid transparent;
+            line-height: 1.65;
+            border: 1px solid transparent;
+            position: relative;
         }
 
         .lyric-line:hover {
-            background: #f1f5f9;
-            color: #475569;
+            background: rgba(99, 102, 241, 0.05);
+            color: #334155;
         }
 
         .lyric-line.past {
-            color: #64748b;
+            color: #94a3b8;
+            opacity: 0.75;
         }
 
         .lyric-line.active {
             color: #1e293b;
-            font-size: 17px;
             font-weight: 600;
-            background: linear-gradient(135deg, #eef2ff, #e0e7ff);
-            border-left-color: #6366f1;
-            transform: scale(1.01);
-            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.1);
+            background: linear-gradient(90deg, rgba(99, 102, 241, 0.09), rgba(99, 102, 241, 0.02));
+            border-color: rgba(99, 102, 241, 0.22);
+            box-shadow: 0 1px 0 rgba(99, 102, 241, 0.05), 0 10px 28px -10px rgba(99, 102, 241, 0.22);
         }
 
         .lyric-line .lyric-ts {
-            font-size: 10px;
-            font-family: 'DM Sans', monospace;
-            color: #cbd5e1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            min-width: 54px;
+            padding: 3px 9px;
+            margin-top: 1px;
+            border-radius: 6px;
+            background: rgba(100, 116, 139, 0.10);
+            color: #94a3b8;
+            font-size: 11px;
+            font-family: 'DM Sans', sans-serif;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
             letter-spacing: 0.3px;
-            transition: color 0.3s;
+            transition: background 0.25s ease, color 0.25s ease, box-shadow 0.25s ease;
+        }
+
+        .lyric-line .lyric-text {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .lyric-line:hover .lyric-ts {
+            background: rgba(99, 102, 241, 0.12);
+            color: #6366f1;
         }
 
         .lyric-line.active .lyric-ts {
-            color: #818cf8;
+            background: linear-gradient(135deg, #6366f1, #818cf8);
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
         }
 
         .lyric-line.past .lyric-ts {
+            background: rgba(100, 116, 139, 0.06);
             color: #cbd5e1;
         }
 
         /* Dark mode lyrics */
         .dark .lyric-line {
-            color: #64748b;
-        }
-
-        .dark .lyric-line:hover {
-            background: #334155;
-            color: #cbd5e1;
-        }
-
-        .dark .lyric-line.past {
             color: #94a3b8;
         }
 
+        .dark .lyric-line:hover {
+            background: rgba(129, 140, 248, 0.08);
+            color: #e2e8f0;
+        }
+
+        .dark .lyric-line.past {
+            color: #64748b;
+            opacity: 0.65;
+        }
+
         .dark .lyric-line.active {
-            color: #f1f5f9;
-            background: linear-gradient(135deg, #312e81, #1e1b4b);
-            border-left-color: #818cf8;
-            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
+            color: #f8fafc;
+            background: linear-gradient(90deg, rgba(129, 140, 248, 0.16), rgba(129, 140, 248, 0.04));
+            border-color: rgba(129, 140, 248, 0.38);
+            box-shadow: 0 1px 0 rgba(129, 140, 248, 0.1), 0 12px 32px -10px rgba(99, 102, 241, 0.5);
         }
 
         .dark .lyric-line .lyric-ts {
-            color: #475569;
+            background: rgba(148, 163, 184, 0.1);
+            color: #64748b;
         }
 
-        .dark .lyric-line.active .lyric-ts {
+        .dark .lyric-line:hover .lyric-ts {
+            background: rgba(129, 140, 248, 0.2);
             color: #a5b4fc;
         }
 
+        .dark .lyric-line.active .lyric-ts {
+            background: linear-gradient(135deg, #6366f1, #a78bfa);
+            color: #fff;
+            box-shadow: 0 2px 10px rgba(99, 102, 241, 0.55);
+        }
+
         .dark .lyric-line.past .lyric-ts {
+            background: rgba(100, 116, 139, 0.1);
             color: #475569;
         }
 
@@ -390,10 +458,11 @@
 
         .audio-progress-fill {
             height: 100%;
-            background: linear-gradient(90deg, #6366f1, #818cf8);
+            background: linear-gradient(90deg, #6366f1 0%, #818cf8 60%, #a78bfa 100%);
             border-radius: 3px;
             position: relative;
             transition: width 0.1s linear;
+            box-shadow: 0 0 12px rgba(129, 140, 248, 0.35);
         }
 
         .audio-progress-track:hover .audio-progress-thumb {
@@ -428,26 +497,55 @@
 
         /* Sidebar link */
         .nav-link {
-            transition: all 0.2s;
+            position: relative;
+            transition: background 0.2s ease, color 0.2s ease;
+            color: #475569;
+        }
+
+        .nav-link::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%) scaleY(0);
+            width: 3px;
+            height: 60%;
+            background: linear-gradient(180deg, #6366f1, #818cf8);
+            border-radius: 0 3px 3px 0;
+            transition: transform 0.25s cubic-bezier(.4, 0, .2, 1);
         }
 
         .nav-link:hover {
-            background: #f1f5f9;
+            background: rgba(99, 102, 241, 0.05);
+            color: #334155;
         }
 
         .nav-link.active {
-            background: #eef2ff;
+            background: linear-gradient(90deg, rgba(99, 102, 241, 0.10), rgba(99, 102, 241, 0));
             color: #4f46e5;
         }
 
+        .nav-link.active::before {
+            transform: translateY(-50%) scaleY(1);
+        }
+
         /* Dark mode nav */
+        .dark .nav-link {
+            color: #94a3b8;
+        }
+
         .dark .nav-link:hover {
-            background: #334155;
+            background: rgba(129, 140, 248, 0.08);
+            color: #e2e8f0;
         }
 
         .dark .nav-link.active {
-            background: #312e81;
-            color: #a5b4fc;
+            background: linear-gradient(90deg, rgba(129, 140, 248, 0.14), rgba(129, 140, 248, 0));
+            color: #c7d2fe;
+        }
+
+        .dark .nav-link.active::before {
+            background: linear-gradient(180deg, #818cf8, #a78bfa);
         }
 
         /* Mini stages for processing phase */
@@ -515,30 +613,39 @@
         }
 
         .dark .stage-mini.active {
-            background: #312e81;
-            color: #a5b4fc;
+            background: rgba(16, 185, 129, 0.15);
+            color: #6ee7b7;
+        }
+
+        .dark .stage-mini.active .stage-mini-dot {
+            background: #10b981;
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
         }
 
         .dark .stage-mini.complete {
-            background: #064e3b;
-            color: #6ee7b7;
+            background: rgba(16, 185, 129, 0.08);
+            color: #34d399;
+        }
+
+        .dark .stage-mini.complete .stage-mini-dot {
+            background: #10b981;
         }
 
         /* Dark mode select */
         .dark select {
-            background-color: #0f172a;
-            border-color: #475569;
-            color: #e2e8f0;
+            background-color: #131316;
+            border-color: #3f3f46;
+            color: #fafafa;
         }
 
         .dark select:focus {
-            border-color: #818cf8;
+            border-color: #10b981;
         }
 
         /* Dark mode textarea */
         .dark textarea {
-            background-color: #0f172a;
-            color: #e2e8f0;
+            background-color: #131316;
+            color: #fafafa;
         }
 
         /* Dark mode transition */
@@ -554,48 +661,215 @@
         textarea {
             transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
         }
+
+        /* ═══════════════════════════════════════════════════════════
+           Dark-mode accent override: violet/indigo → emerald.
+           Calmer, more professional reading experience against the
+           neutral zinc base. Light mode keeps the indigo palette.
+           ═══════════════════════════════════════════════════════════ */
+        .dark .bg-primary-50 { background-color: #064e3b !important; }
+        .dark .bg-primary-100 { background-color: rgba(16, 185, 129, 0.12) !important; }
+        .dark .bg-primary-400 { background-color: #34d399 !important; }
+        .dark .bg-primary-500 { background-color: #10b981 !important; }
+        .dark .bg-primary-600 { background-color: #059669 !important; }
+        .dark .bg-primary-700 { background-color: #047857 !important; }
+
+        .dark .hover\:bg-primary-50:hover { background-color: rgba(16, 185, 129, 0.08) !important; }
+        .dark .hover\:bg-primary-500:hover { background-color: #10b981 !important; }
+        .dark .hover\:bg-primary-600:hover { background-color: #059669 !important; }
+        .dark .hover\:bg-primary-700:hover { background-color: #047857 !important; }
+
+        .dark .text-primary-300 { color: #6ee7b7 !important; }
+        .dark .text-primary-400 { color: #34d399 !important; }
+        .dark .text-primary-500 { color: #10b981 !important; }
+        .dark .text-primary-600 { color: #10b981 !important; }
+        .dark .text-primary-700 { color: #059669 !important; }
+
+        .dark .border-primary-200 { border-color: rgba(16, 185, 129, 0.25) !important; }
+        .dark .border-primary-300 { border-color: rgba(16, 185, 129, 0.35) !important; }
+        .dark .border-primary-400 { border-color: #34d399 !important; }
+        .dark .border-primary-500 { border-color: #10b981 !important; }
+        .dark .hover\:border-primary-200:hover { border-color: rgba(16, 185, 129, 0.4) !important; }
+
+        .dark .ring-primary-100 { --tw-ring-color: rgba(16, 185, 129, 0.18) !important; }
+        .dark .focus\:ring-primary-100:focus { --tw-ring-color: rgba(16, 185, 129, 0.18) !important; }
+
+        /* Gradient stops on buttons + accents */
+        .dark .from-primary-500 { --tw-gradient-from: #10b981 var(--tw-gradient-from-position) !important; --tw-gradient-to: rgb(16 185 129 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+        .dark .from-primary-600 { --tw-gradient-from: #059669 var(--tw-gradient-from-position) !important; --tw-gradient-to: rgb(5 150 105 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+        .dark .to-primary-500 { --tw-gradient-to: #10b981 var(--tw-gradient-to-position) !important; }
+        .dark .to-primary-600 { --tw-gradient-to: #059669 var(--tw-gradient-to-position) !important; }
+        .dark .to-primary-700 { --tw-gradient-to: #047857 var(--tw-gradient-to-position) !important; }
+        .dark .hover\:from-primary-600:hover { --tw-gradient-from: #059669 var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+        .dark .hover\:to-primary-700:hover { --tw-gradient-to: #047857 var(--tw-gradient-to-position) !important; }
+
+        /* Soft glow / shadow tint */
+        .dark .shadow-primary-500\/30 { --tw-shadow-color: rgba(16, 185, 129, 0.30) !important; --tw-shadow: var(--tw-shadow-colored); }
+        .dark .shadow-primary-500\/40 { --tw-shadow-color: rgba(16, 185, 129, 0.40) !important; --tw-shadow: var(--tw-shadow-colored); }
+        .dark .shadow-primary-500\/50 { --tw-shadow-color: rgba(16, 185, 129, 0.50) !important; --tw-shadow: var(--tw-shadow-colored); }
+        .dark .hover\:shadow-primary-500\/40:hover { --tw-shadow-color: rgba(16, 185, 129, 0.40) !important; --tw-shadow: var(--tw-shadow-colored); }
+
+        /* Sidebar nav rail + active state */
+        .dark .nav-link.active {
+            background: linear-gradient(90deg, rgba(16, 185, 129, 0.14), rgba(16, 185, 129, 0)) !important;
+            color: #6ee7b7 !important;
+        }
+        .dark .nav-link.active::before {
+            background: linear-gradient(180deg, #10b981, #34d399) !important;
+        }
+        .dark .nav-link:hover {
+            background: rgba(16, 185, 129, 0.08) !important;
+        }
+
+        /* Lyric line active state (was indigo wash) */
+        .dark .lyric-line.active {
+            background: linear-gradient(90deg, rgba(16, 185, 129, 0.16), rgba(16, 185, 129, 0.04)) !important;
+            border-color: rgba(16, 185, 129, 0.4) !important;
+            box-shadow: 0 1px 0 rgba(16, 185, 129, 0.1), 0 12px 32px -10px rgba(16, 185, 129, 0.45) !important;
+        }
+        .dark .lyric-line:hover {
+            background: rgba(16, 185, 129, 0.08) !important;
+        }
+        .dark .lyric-line.active .lyric-ts {
+            background: linear-gradient(135deg, #059669, #10b981) !important;
+            box-shadow: 0 2px 10px rgba(16, 185, 129, 0.5) !important;
+        }
+        .dark .lyric-line:hover .lyric-ts {
+            background: rgba(16, 185, 129, 0.2) !important;
+            color: #6ee7b7 !important;
+        }
+
+        /* Audio progress fill (was indigo gradient) */
+        .dark .audio-progress-fill {
+            background: linear-gradient(90deg, #10b981 0%, #34d399 60%, #6ee7b7 100%) !important;
+            box-shadow: 0 0 12px rgba(52, 211, 153, 0.35) !important;
+        }
+        .dark .audio-progress-thumb {
+            border-color: #10b981 !important;
+        }
+
+        /* Range slider (Words per line) */
+        .dark input[type="range"] {
+            background: linear-gradient(90deg, #10b981 0%, #34d399 var(--range-fill), var(--range-track) var(--range-fill), var(--range-track) 100%) !important;
+        }
+        .dark input[type="range"]::-webkit-slider-thumb {
+            border-color: #10b981 !important;
+            box-shadow: 0 2px 8px rgba(16, 185, 129, 0.5), 0 0 0 4px rgba(16, 185, 129, 0.08) !important;
+        }
+        .dark input[type="range"]:hover::-webkit-slider-thumb,
+        .dark input[type="range"]:focus::-webkit-slider-thumb {
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.65), 0 0 0 6px rgba(16, 185, 129, 0.14) !important;
+        }
+        .dark input[type="range"]::-moz-range-thumb {
+            border-color: #10b981 !important;
+            box-shadow: 0 2px 8px rgba(16, 185, 129, 0.5) !important;
+        }
+
+        /* Logo tile */
+        .dark .from-primary-500.to-primary-600 {
+            background-image: linear-gradient(to bottom right, #10b981, #059669) !important;
+        }
+
+        /* .btn-primary (Browse Files, Generate, etc.) — hardcoded indigo gradient */
+        .dark .btn-primary {
+            background: linear-gradient(135deg, #10b981, #059669) !important;
+            box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25), 0 8px 24px -8px rgba(16, 185, 129, 0.4) !important;
+        }
+        .dark .btn-primary:hover {
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35), 0 12px 32px -10px rgba(16, 185, 129, 0.55) !important;
+        }
+
+        /* Accent radial glows — flip from indigo (light) to emerald (dark) */
+        .sidebar-glow {
+            background: radial-gradient(ellipse at top, rgba(99, 102, 241, 0.10), transparent 65%);
+        }
+        .dark .sidebar-glow {
+            background: radial-gradient(ellipse at top, rgba(16, 185, 129, 0.10), transparent 65%);
+        }
+        .player-glow {
+            background: radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.06), transparent 55%);
+        }
+        .dark .player-glow {
+            background: radial-gradient(circle at 0% 0%, rgba(16, 185, 129, 0.07), transparent 55%);
+        }
+
+        /* Sidebar collapse — width animates to 0, content fades out */
+        #sidebar.collapsed {
+            width: 0 !important;
+            border-right-width: 0 !important;
+        }
+
+        #sidebar > * {
+            transition: opacity 0.2s ease;
+        }
+
+        #sidebar.collapsed > * {
+            opacity: 0;
+        }
+
+        /* Tailwind dark: variants — different selector from plain bg-primary-*  */
+        .dark .dark\:bg-primary-400 { background-color: #34d399 !important; }
+        .dark .dark\:bg-primary-500 { background-color: #10b981 !important; }
+        .dark .dark\:bg-primary-600 { background-color: #059669 !important; }
+        .dark .dark\:bg-primary-700 { background-color: #047857 !important; }
+        .dark .dark\:bg-primary-500\/15 { background-color: rgba(16, 185, 129, 0.15) !important; }
+        .dark .dark\:bg-primary-500\/20 { background-color: rgba(16, 185, 129, 0.20) !important; }
+        .dark .dark\:bg-primary-500\/10 { background-color: rgba(16, 185, 129, 0.10) !important; }
+        .dark .dark\:text-primary-300 { color: #6ee7b7 !important; }
+        .dark .dark\:text-primary-400 { color: #34d399 !important; }
+        .dark .dark\:text-primary-500 { color: #10b981 !important; }
+        .dark .dark\:border-primary-500\/30 { border-color: rgba(16, 185, 129, 0.3) !important; }
+        .dark .dark\:border-primary-500\/40 { border-color: rgba(16, 185, 129, 0.4) !important; }
+        .dark .dark\:focus\:border-primary-500:focus { border-color: #10b981 !important; }
+        .dark .dark\:focus\:ring-primary-500\/20:focus { --tw-ring-color: rgba(16, 185, 129, 0.20) !important; }
+        .dark .dark\:hover\:bg-primary-500\/10:hover { background-color: rgba(16, 185, 129, 0.10) !important; }
     </style>
 </head>
 
-<body class="h-full bg-slate-50 dark:bg-dark-bg text-slate-700 dark:text-dark-text font-sans antialiased">
+<body class="h-full bg-app-bg dark:bg-dark-bg text-slate-800 dark:text-dark-text font-sans antialiased">
 
     <div class="h-full flex">
 
         <!-- Sidebar -->
-        <aside
-            class="w-72 bg-white dark:bg-dark-surface border-r border-slate-200 dark:border-dark-border flex flex-col shadow-sm">
+        <aside id="sidebar"
+            class="w-72 bg-white dark:bg-dark-surface border-r border-slate-200 dark:border-dark-border flex flex-col shadow-sm relative overflow-hidden transition-[width,border] duration-300 ease-in-out">
+            <div class="sidebar-glow absolute inset-x-0 top-0 h-32 pointer-events-none opacity-70"></div>
 
             <!-- Logo -->
-            <div class="h-20 flex items-center px-6 border-b border-slate-100 dark:border-dark-border">
+            <div class="relative h-20 flex items-center px-6 border-b border-slate-100 dark:border-dark-border">
                 <div class="flex items-center gap-3">
                     <div
-                        class="w-11 h-11 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center shadow-lg shadow-primary-500/30">
+                        class="w-11 h-11 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center shadow-lg shadow-primary-500/40 ring-1 ring-white/10">
                         <svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"
                             stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round"
                                 d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                         </svg>
                     </div>
-                    <div>
-                        <h1 class="text-lg font-bold text-slate-800 dark:text-white">SRT Studio</h1>
-                        <p class="text-xs text-slate-400 dark:text-slate-500 font-medium">AI Subtitle Generator</p>
+                    <div class="leading-tight">
+                        <h1 class="text-base font-bold text-slate-800 dark:text-white tracking-tight">SRT Studio</h1>
+                        <p class="text-[11px] text-slate-400 dark:text-slate-500 font-medium">AI Subtitle Generator</p>
                     </div>
                 </div>
             </div>
 
             <!-- Navigation -->
-            <nav class="flex-1 p-4 space-y-2">
+            <nav class="relative p-3 space-y-1">
+                <p class="px-3 pt-2 pb-2 text-[10px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-[0.12em]">
+                    Workspace</p>
                 <button id="nav-studio"
-                    class="nav-link active w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold dark:text-dark-text">
-                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    class="nav-link active w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold">
+                    <svg class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                        stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round"
                             d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
                     </svg>
                     Studio
                 </button>
                 <button id="nav-history"
-                    class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-500 dark:text-slate-400">
-                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    class="nav-link w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium">
+                    <svg class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                        stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round"
                             d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
@@ -603,14 +877,25 @@
                 </button>
             </nav>
 
+            <!-- Settings -->
+            <div class="flex-1 px-3 pt-2 pb-3 overflow-y-auto">
+                <p class="px-3 pt-3 pb-2 text-[10px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-[0.12em]">
+                    Settings</p>
 
-            <!-- Language Selector -->
-            <div class="p-4 border-t border-slate-100">
-                <label
-                    class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-3">Language</label>
-                <div class="relative">
-                    <select id="language-select"
-                        class="w-full appearance-none bg-white border-2 border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-700 focus:outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 transition-all cursor-pointer hover:border-slate-300">
+                <!-- Language Selector -->
+                <div class="px-3 py-3">
+                    <label
+                        class="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-2">
+                        <svg class="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                            stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+                        </svg>
+                        Language
+                    </label>
+                    <div class="relative">
+                        <select id="language-select"
+                            class="w-full appearance-none bg-app-bg dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-lg px-3 py-2 pr-9 text-sm font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:border-primary-400 dark:focus:border-primary-500 focus:ring-2 focus:ring-primary-100 dark:focus:ring-primary-500/20 transition-all cursor-pointer hover:border-slate-300 dark:hover:border-slate-600">
                         <option value="auto">Auto-Detect</option>
                         <optgroup label="Common">
                             <option value="English">English</option>
@@ -670,74 +955,117 @@
                         </svg>
                     </div>
                 </div>
-                <p id="language-hint" class="text-[10px] text-slate-400 mt-2 px-1">Auto-detect transcribes in the spoken
-                    language</p>
+                    <p id="language-hint" class="text-[10px] text-slate-400 dark:text-slate-500 mt-1.5 leading-snug">Auto-detect transcribes in the spoken language</p>
+                </div>
+
+                <!-- Slider -->
+                <div class="px-3 py-3">
+                    <div class="flex items-center justify-between mb-1">
+                        <label
+                            class="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                                stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M4 6h16M4 12h8m-8 6h16" />
+                            </svg>
+                            Words per line
+                        </label>
+                        <span id="words-preset-hint"
+                            class="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide">Balanced</span>
+                    </div>
+
+                    <!-- Slider track with floating value bubble -->
+                    <div class="relative pt-7 pb-1">
+                        <div id="words-bubble"
+                            class="absolute top-0 -translate-x-1/2 px-1.5 py-0.5 rounded-md bg-gradient-to-br from-primary-500 to-primary-600 text-white text-[11px] font-bold tabular-nums shadow-md shadow-primary-500/40 transition-[left] duration-100 pointer-events-none"
+                            style="left: 50%;">
+                            <span id="words-value">8</span>
+                            <span
+                                class="absolute left-1/2 -translate-x-1/2 -bottom-[3px] w-1.5 h-1.5 bg-primary-600 rotate-45"></span>
+                        </div>
+                        <input type="range" id="words-slider" min="3" max="15" value="8" class="w-full block">
+                    </div>
+
+                    <!-- Min / preset hint / Max -->
+                    <div class="flex items-center justify-between mt-1.5 px-0.5 text-[10px] font-mono font-semibold tabular-nums text-slate-400 dark:text-slate-600">
+                        <span>3</span>
+                        <span class="text-slate-300 dark:text-slate-700">·</span>
+                        <span>15</span>
+                    </div>
+
+                    <!-- Preset chips -->
+                    <div class="flex gap-1 mt-3" role="group" aria-label="Word presets">
+                        <button type="button" data-preset="5"
+                            class="words-preset flex-1 px-2 py-1 rounded-md text-[10px] font-semibold border border-slate-200 dark:border-dark-border text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-dark-bg hover:text-slate-700 dark:hover:text-slate-200 transition-colors">
+                            Short
+                        </button>
+                        <button type="button" data-preset="8"
+                            class="words-preset flex-1 px-2 py-1 rounded-md text-[10px] font-semibold border border-slate-200 dark:border-dark-border text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-dark-bg hover:text-slate-700 dark:hover:text-slate-200 transition-colors">
+                            Balanced
+                        </button>
+                        <button type="button" data-preset="12"
+                            class="words-preset flex-1 px-2 py-1 rounded-md text-[10px] font-semibold border border-slate-200 dark:border-dark-border text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-dark-bg hover:text-slate-700 dark:hover:text-slate-200 transition-colors">
+                            Long
+                        </button>
+                    </div>
+                </div>
             </div>
 
-            <!-- Slider -->
-            <div class="p-4 border-t border-slate-100 dark:border-dark-border">
-                <label
-                    class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-4">Words
-                    per
-                    line</label>
-                <div class="flex items-center gap-4">
-                    <input type="range" id="words-slider" min="3" max="15" value="8" class="flex-1">
-                    <span id="words-value"
-                        class="w-10 h-10 rounded-xl bg-primary-100 text-primary-700 flex items-center justify-center text-sm font-bold">8</span>
-                </div>
-                <div class="flex justify-between text-[10px] text-slate-400 mt-2 px-1">
-                    <span>Shorter</span>
-                    <span>Longer</span>
-                </div>
-            </div>
-
-            <!-- New Project -->
-            <div class="p-4">
+            <!-- New Project + Theme Footer -->
+            <div class="p-3 border-t border-slate-100 dark:border-dark-border space-y-2">
                 <button id="new-btn"
-                    class="btn btn-secondary w-full py-3 text-sm flex items-center justify-center gap-2">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    class="w-full py-2.5 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 bg-gradient-to-br from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white shadow-md shadow-primary-500/30 hover:shadow-lg hover:shadow-primary-500/40 transition-all hover:-translate-y-px active:translate-y-0 ring-1 ring-white/10">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
                     </svg>
                     New Project
                 </button>
-            </div>
-
-            <!-- Dark Mode Toggle -->
-            <div class="p-4 border-t border-slate-100 dark:border-dark-border">
                 <button id="dark-mode-toggle"
-                    class="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all">
+                    class="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
                     <!-- Sun icon (shown in dark mode) -->
-                    <svg id="sun-icon" class="w-5 h-5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                    <svg id="sun-icon" class="w-4 h-4 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"
                         stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round"
                             d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
                     </svg>
                     <!-- Moon icon (shown in light mode) -->
-                    <svg id="moon-icon" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                    <svg id="moon-icon" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"
                         stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round"
                             d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
                     </svg>
+                    <span class="flex-1 text-left">Appearance</span>
                     <div id="dark-mode-switch"
-                        class="w-11 h-6 bg-slate-300 dark:bg-primary-600 rounded-full relative transition-colors">
+                        class="w-9 h-5 bg-slate-300 dark:bg-primary-600 rounded-full relative transition-colors flex-shrink-0">
                         <div id="dark-mode-knob"
-                            class="w-5 h-5 bg-white rounded-full absolute top-0.5 left-0.5 dark:left-[22px] transition-all shadow-sm">
+                            class="w-4 h-4 bg-white rounded-full absolute top-0.5 left-0.5 dark:left-[18px] transition-all shadow-sm">
                         </div>
                     </div>
                 </button>
             </div>
         </aside>
 
+        <!-- Sidebar toggle (floats on sidebar's right edge) -->
+        <button id="sidebar-toggle" type="button"
+            aria-label="Toggle sidebar"
+            class="absolute top-7 z-30 w-7 h-7 rounded-full bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-md flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:border-slate-300 dark:hover:border-slate-600 hover:scale-105 active:scale-95 transition-all duration-300"
+            style="left: 274px;">
+            <svg id="sidebar-toggle-icon" class="w-3.5 h-3.5 transition-transform duration-300" fill="none"
+                viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+        </button>
+
         <!-- Main -->
-        <main class="flex-1 flex flex-col overflow-hidden bg-slate-50 dark:bg-dark-bg">
+        <main class="flex-1 flex flex-col overflow-hidden bg-app-bg dark:bg-dark-bg">
 
             <!-- Header -->
             <header
                 class="h-20 flex items-center justify-between px-8 bg-white dark:bg-dark-surface border-b border-slate-200 dark:border-dark-border">
                 <div>
-                    <h2 id="page-title" class="text-xl font-bold text-slate-800 dark:text-white">Studio</h2>
-                    <p id="page-desc" class="text-sm text-slate-400 dark:text-slate-500">Generate subtitles from audio &
-                        video</p>
+                    <h2 id="page-title" class="text-xl font-bold text-slate-900 dark:text-white tracking-tight">Studio</h2>
+                    <p id="page-desc" class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Generate subtitles from
+                        audio &amp; video</p>
                 </div>
                 <div class="flex items-center gap-4">
                     <span id="file-display"
@@ -791,17 +1119,17 @@
                                     </svg>
                                 </div>
 
-                                <h3 class="text-2xl font-bold text-slate-800 dark:text-white mb-2">Drop your file here
-                                </h3>
-                                <p class="text-base text-slate-400 mb-6">Supports MP4, MP3, WAV, MOV and more</p>
+                                <h3 class="text-2xl font-bold text-slate-900 dark:text-white mb-2 tracking-tight">Drop
+                                    your file here</h3>
+                                <p class="text-base text-slate-500 dark:text-slate-400 mb-6">Supports MP4, MP3, WAV,
+                                    MOV and more</p>
 
                                 <button id="browse-btn" class="btn btn-primary px-8 py-3 text-base">
                                     Browse Files
                                 </button>
 
-                                <p class="text-sm text-slate-400 dark:text-slate-500 mt-6">Maximum file size: 2GB · Up
-                                    to 1 hour duration
-                                </p>
+                                <p class="text-xs text-slate-400 dark:text-slate-500 mt-6 font-medium">Maximum file
+                                    size: 2GB · Up to 1 hour duration</p>
                             </div>
 
                             <!-- File Card -->
@@ -840,6 +1168,16 @@
                     <!-- Processing View -->
                     <div id="processing-view" class="hidden h-full flex items-center justify-center fade-in">
                         <div class="w-full max-w-xl card p-10 text-center">
+
+                            <!-- File info chip -->
+                            <div id="proc-file-chip" class="hidden flex items-center justify-center gap-2 mb-4 px-3 py-1.5 mx-auto rounded-full bg-slate-100 dark:bg-dark-bg text-slate-600 dark:text-slate-300 text-xs font-medium w-fit max-w-full">
+                                <svg class="w-3.5 h-3.5 flex-shrink-0 text-primary-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                                </svg>
+                                <span id="proc-file-name" class="truncate max-w-[260px]">filename.mp3</span>
+                                <span class="text-slate-400">·</span>
+                                <span id="proc-file-size" class="font-mono">0 MB</span>
+                            </div>
 
                             <!-- Phase Indicator -->
                             <div id="phase-indicator" class="flex items-center justify-center gap-4 mb-6">
@@ -892,16 +1230,16 @@
 
                                 <!-- Upload Stats -->
                                 <div id="upload-stats" class="grid grid-cols-3 gap-4 mb-4">
-                                    <div class="bg-slate-50 dark:bg-dark-bg rounded-xl p-3">
+                                    <div class="bg-app-bg dark:bg-dark-bg rounded-xl p-3">
                                         <p class="text-xs text-slate-400 mb-1">Transferred</p>
                                         <p id="upload-transferred"
                                             class="text-sm font-bold text-slate-700 dark:text-dark-text">0 MB</p>
                                     </div>
-                                    <div class="bg-slate-50 dark:bg-dark-bg rounded-xl p-3">
+                                    <div class="bg-app-bg dark:bg-dark-bg rounded-xl p-3">
                                         <p class="text-xs text-slate-400 mb-1">Speed</p>
                                         <p id="upload-speed" class="text-sm font-bold text-emerald-600">-- MB/s</p>
                                     </div>
-                                    <div class="bg-slate-50 dark:bg-dark-bg rounded-xl p-3">
+                                    <div class="bg-app-bg dark:bg-dark-bg rounded-xl p-3">
                                         <p class="text-xs text-slate-400 mb-1">Remaining</p>
                                         <p id="upload-eta" class="text-sm font-bold text-slate-700 dark:text-dark-text">
                                             --</p>
@@ -934,7 +1272,7 @@
                                 </div>
 
                                 <!-- Processing Stages -->
-                                <div class="flex justify-center gap-2 mb-4">
+                                <div class="flex justify-center gap-2 mb-4 flex-wrap">
                                     <div class="stage-mini" data-stage="converting">
                                         <div class="stage-mini-dot"></div>
                                         <span>Convert</span>
@@ -953,19 +1291,45 @@
                                     </div>
                                 </div>
 
-                                <p id="process-msg" class="text-base text-slate-500">Preparing your file...</p>
+                                <!-- Process Stats -->
+                                <div id="process-stats" class="grid grid-cols-3 gap-4 mb-4">
+                                    <div class="bg-app-bg dark:bg-dark-bg rounded-xl p-3">
+                                        <p class="text-xs text-slate-400 mb-1">Elapsed</p>
+                                        <p id="process-elapsed" class="text-sm font-bold font-mono text-slate-700 dark:text-dark-text">00:00</p>
+                                    </div>
+                                    <div class="bg-app-bg dark:bg-dark-bg rounded-xl p-3">
+                                        <p class="text-xs text-slate-400 mb-1">Remaining</p>
+                                        <p id="process-eta" class="text-sm font-bold text-primary-600">calculating…</p>
+                                    </div>
+                                    <div class="bg-app-bg dark:bg-dark-bg rounded-xl p-3">
+                                        <p class="text-xs text-slate-400 mb-1">Stage</p>
+                                        <p id="process-stage-text" class="text-sm font-bold text-slate-700 dark:text-dark-text truncate">Starting…</p>
+                                    </div>
+                                </div>
+
+                                <div class="flex items-center justify-center gap-2 min-h-[1.25rem]">
+                                    <span class="relative flex w-2 h-2 flex-shrink-0">
+                                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-400 opacity-75"></span>
+                                        <span class="relative inline-flex rounded-full h-2 w-2 bg-primary-500"></span>
+                                    </span>
+                                    <p id="process-msg" class="text-sm text-slate-500 dark:text-slate-400 truncate">Preparing your file…</p>
+                                </div>
+
+                                <!-- Live status feed (last 3 events) -->
+                                <div id="process-feed"
+                                    class="mt-3 mx-auto max-w-md text-left bg-slate-50/70 dark:bg-dark-bg/50 border border-slate-200/70 dark:border-dark-border/70 rounded-lg p-2.5 space-y-1 text-[11px] font-mono text-slate-500 dark:text-slate-400 hidden">
+                                </div>
+
+                                <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-2">Larger files may take several minutes. You can leave this tab open.</p>
                             </div>
 
                             <!-- Log (Hidden) -->
-                            <div class="hidden bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl p-4 h-28 overflow-y-auto text-left font-mono text-xs text-slate-600 dark:text-slate-400"
+                            <div class="hidden bg-app-bg dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl p-4 h-28 overflow-y-auto text-left font-mono text-xs text-slate-600 dark:text-slate-400"
                                 id="log-box">
                                 <div class="text-primary-600">[System] Starting...</div>
                             </div>
 
-                            <p class="text-sm text-slate-400 mt-4">
-                                Elapsed: <span id="elapsed"
-                                    class="font-mono font-semibold text-slate-600 dark:text-slate-300">00:00</span>
-                            </p>
+                            <span id="elapsed" class="hidden">00:00</span>
                         </div>
                     </div>
 
@@ -973,34 +1337,37 @@
                     <div id="result-view" class="hidden h-full flex flex-col gap-4 fade-in">
 
                         <!-- Audio Player Card -->
-                        <div id="audio-player-card" class="card p-5 hidden flex-shrink-0">
+                        <div id="audio-player-card" class="card p-5 hidden flex-shrink-0 relative overflow-hidden">
+                            <div class="player-glow absolute inset-0 pointer-events-none opacity-60 dark:opacity-100"></div>
                             <audio id="audio-el" preload="metadata"></audio>
-                            <div class="flex items-center gap-4">
+                            <div class="relative flex items-center gap-5">
                                 <!-- Play/Pause Button -->
                                 <button id="play-pause-btn"
-                                    class="w-12 h-12 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white flex items-center justify-center shadow-lg shadow-primary-500/30 transition-all hover:scale-105 active:scale-95 flex-shrink-0">
-                                    <svg id="play-icon" class="w-5 h-5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                                    class="w-14 h-14 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white flex items-center justify-center shadow-xl shadow-primary-500/40 transition-all hover:scale-105 active:scale-95 flex-shrink-0 ring-1 ring-white/10">
+                                    <svg id="play-icon" class="w-6 h-6 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
                                         <path d="M8 5v14l11-7z" />
                                     </svg>
-                                    <svg id="pause-icon" class="w-5 h-5 hidden" fill="currentColor" viewBox="0 0 24 24">
+                                    <svg id="pause-icon" class="w-6 h-6 hidden" fill="currentColor" viewBox="0 0 24 24">
                                         <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
                                     </svg>
                                 </button>
 
-                                <!-- Time + Progress -->
+                                <!-- Filename + Progress -->
                                 <div class="flex-1 min-w-0">
-                                    <div class="flex items-center gap-3">
-                                        <span id="audio-current"
-                                            class="text-xs font-mono font-semibold text-slate-500 w-10 text-right flex-shrink-0">0:00</span>
-                                        <div id="audio-progress-track" class="audio-progress-track flex-1">
-                                            <div id="audio-progress-fill" class="audio-progress-fill" style="width: 0%">
-                                                <div class="audio-progress-thumb"></div>
-                                            </div>
+                                    <div class="flex items-center justify-between gap-3 mb-2">
+                                        <p id="audio-filename"
+                                            class="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate"></p>
+                                        <div class="text-xs font-mono font-semibold text-slate-500 dark:text-slate-400 tabular-nums whitespace-nowrap flex-shrink-0">
+                                            <span id="audio-current">0:00</span>
+                                            <span class="text-slate-300 dark:text-slate-600 mx-1">/</span>
+                                            <span id="audio-duration">0:00</span>
                                         </div>
-                                        <span id="audio-duration"
-                                            class="text-xs font-mono font-semibold text-slate-500 w-10 flex-shrink-0">0:00</span>
                                     </div>
-                                    <p id="audio-filename" class="text-xs text-slate-400 mt-1.5 truncate max-w-md"></p>
+                                    <div id="audio-progress-track" class="audio-progress-track">
+                                        <div id="audio-progress-fill" class="audio-progress-fill" style="width: 0%">
+                                            <div class="audio-progress-thumb"></div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1009,8 +1376,8 @@
                         <div class="flex-1 card flex flex-col overflow-hidden min-h-0">
                             <!-- Toolbar -->
                             <div
-                                class="h-14 bg-slate-50 dark:bg-dark-bg border-b border-slate-200 dark:border-dark-border flex items-center justify-between px-5 flex-shrink-0">
-                                <div class="flex items-center gap-3">
+                                class="h-14 bg-slate-50/80 dark:bg-dark-bg/70 backdrop-blur border-b border-slate-200 dark:border-dark-border flex items-center justify-between px-5 flex-shrink-0">
+                                <div class="flex items-center gap-4">
                                     <div class="flex bg-slate-200/80 dark:bg-dark-border/80 rounded-lg p-0.5">
                                         <button id="lyrics-view-btn"
                                             class="px-3.5 py-1.5 rounded-md text-xs font-semibold bg-white dark:bg-dark-surface text-primary-600 dark:text-primary-400 shadow-sm transition-all">
@@ -1021,15 +1388,28 @@
                                             Raw SRT
                                         </button>
                                     </div>
+                                    <div id="result-stats"
+                                        class="hidden sm:flex items-center gap-3 text-xs text-slate-400 dark:text-slate-500 font-medium">
+                                        <span class="flex items-center gap-1.5">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                            <span id="stat-count">0 lines</span>
+                                        </span>
+                                        <span class="text-slate-300 dark:text-slate-700">·</span>
+                                        <span id="stat-duration" class="font-mono">0:00</span>
+                                    </div>
                                 </div>
                                 <button id="copy-btn"
-                                    class="text-sm font-semibold text-primary-600 dark:text-primary-400 hover:text-primary-700 flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-colors">
-                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                                        stroke-width="2">
+                                    class="group text-sm font-semibold text-primary-600 dark:text-primary-400 hover:text-primary-700 flex items-center gap-2 px-3 py-1.5 rounded-lg border border-transparent hover:border-primary-200 dark:hover:border-primary-500/30 hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-all">
+                                    <svg id="copy-icon" class="w-4 h-4" fill="none" viewBox="0 0 24 24"
+                                        stroke="currentColor" stroke-width="2">
                                         <path stroke-linecap="round" stroke-linejoin="round"
                                             d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
                                     </svg>
-                                    Copy
+                                    <svg id="copy-check" class="w-4 h-4 hidden text-emerald-500" fill="none"
+                                        viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    <span id="copy-label">Copy</span>
                                 </button>
                             </div>
 
@@ -1106,6 +1486,15 @@
         const api = window.location.origin;
         let sse = null, timer = null, start = null;
         let segments = [], currentLyricIdx = -1, isLyricsView = true;
+        // Processing-ETA: rolling samples of {t, pct} for rate-based remaining-time estimate
+        const procEtaSamples = [];
+        // Per-stage timing: track when current stage began for "Stage · 0:43" sub-label
+        let procStageStart = 0;
+        let procStageName = null;
+        let procProcessStart = 0; // when processing phase began (for fallback ETA)
+        let procLastPercent = 0;  // last seen display percent — used by the 1s tick to refresh ETA between SSE messages
+        // Upload-speed EMA smoother (alpha = 0.25 → smooth but responsive)
+        let uploadSpeedEMA = 0;
 
         // Configuration
         const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
@@ -1136,6 +1525,8 @@
             fileCard: $('file-card'), fileName: $('file-name'), generateBtn: $('generate-btn'),
             downloadBtn: $('download-btn'), downloadAudioBtn: $('download-audio-btn'), downloadTimingBtn: $('download-timing-btn'),
             copyBtn: $('copy-btn'), editor: $('editor'),
+            copyIcon: $('copy-icon'), copyCheck: $('copy-check'), copyLabel: $('copy-label'),
+            statCount: $('stat-count'), statDuration: $('stat-duration'),
             // Audio player
             audioPlayerCard: $('audio-player-card'), audioEl: $('audio-el'),
             playPauseBtn: $('play-pause-btn'), playIcon: $('play-icon'), pauseIcon: $('pause-icon'),
@@ -1147,6 +1538,7 @@
             lyricsViewBtn: $('lyrics-view-btn'), rawViewBtn: $('raw-view-btn'),
             languageSelect: $('language-select'), languageHint: $('language-hint'),
             wordsSlider: $('words-slider'), wordsValue: $('words-value'),
+            wordsBubble: $('words-bubble'), wordsPresetHint: $('words-preset-hint'),
             newBtn: $('new-btn'), statusText: $('status-text'), modelDisplay: $('model-display'),
             fileDisplay: $('file-display'),
             historyList: $('history-list'), noHistory: $('no-history'),
@@ -1157,6 +1549,9 @@
             uploadTransferred: $('upload-transferred'), uploadSpeed: $('upload-speed'), uploadEta: $('upload-eta'),
             processRing: $('process-ring'), processPct: $('process-pct'), processMsg: $('process-msg'),
             processStageLabel: $('process-stage-label'),
+            processElapsed: $('process-elapsed'), processEta: $('process-eta'), processStageText: $('process-stage-text'),
+            processFeed: $('process-feed'),
+            procFileChip: $('proc-file-chip'), procFileName: $('proc-file-name'), procFileSize: $('proc-file-size'),
             phaseUploadBadge: $('phase-upload-badge'), phaseProcessBadge: $('phase-process-badge'),
             elapsed: $('elapsed'),
             pageTitle: $('page-title'), pageDesc: $('page-desc')
@@ -1277,19 +1672,81 @@
             el.downloadAudioBtn.classList.add('hidden');
             el.downloadTimingBtn.classList.add('hidden');
             el.fileDisplay.classList.add('hidden');
+            if (el.procFileChip) {
+                el.procFileChip.classList.add('hidden');
+                el.procFileChip.classList.remove('flex');
+            }
+            procEtaSamples.length = 0;
             if (el.statusText) el.statusText.textContent = 'Ready';
             setView('studio');
         }
 
         // Process
+        // Active-job persistence: lets the user reload mid-transcription and pick
+        // back up where the server left off. Saved when process() starts; cleared
+        // on success/error/cancel.
+        const ACTIVE_JOB_KEY = 'srt_active_job';
+        const ACTIVE_JOB_TTL_MS = 30 * 60 * 1000;
+
+        function saveActiveJob(data) {
+            try { localStorage.setItem(ACTIVE_JOB_KEY, JSON.stringify(data)); }
+            catch (e) { console.warn('active job save failed', e); }
+        }
+        function clearActiveJob() {
+            try { localStorage.removeItem(ACTIVE_JOB_KEY); } catch { }
+        }
+        function loadActiveJob() {
+            try {
+                const raw = localStorage.getItem(ACTIVE_JOB_KEY);
+                if (!raw) return null;
+                const d = JSON.parse(raw);
+                if (!d.jobId || !d.startedAt) return null;
+                if (Date.now() - d.startedAt > ACTIVE_JOB_TTL_MS) {
+                    clearActiveJob();
+                    return null;
+                }
+                return d;
+            } catch { return null; }
+        }
+
         async function process() {
             if (!state.file) return;
             const jobId = generateUUID();
+
+            saveActiveJob({
+                jobId,
+                filename: state.file.name,
+                fileSize: state.file.size,
+                wordLimit: parseInt(el.wordsSlider.value),
+                language: el.languageSelect.value,
+                startedAt: Date.now()
+            });
 
             el.uploadView.classList.add('hidden');
             el.processingView.classList.remove('hidden');
             if (el.statusText) el.statusText.textContent = 'Processing';
             el.logBox.innerHTML = '<div class="text-primary-600">[System] Starting...</div>';
+
+            // Show file info chip (name + size) during processing
+            if (el.procFileChip && state.file) {
+                el.procFileName.textContent = state.file.name;
+                const sizeMB = state.file.size / (1024 * 1024);
+                el.procFileSize.textContent = sizeMB >= 1
+                    ? `${sizeMB.toFixed(1)} MB`
+                    : `${Math.round(state.file.size / 1024)} KB`;
+                el.procFileChip.classList.remove('hidden');
+                el.procFileChip.classList.add('flex');
+            }
+
+            // Reset processing-eta tracker + live feed
+            procEtaSamples.length = 0;
+            procStageStart = Date.now();
+            procStageName = null;
+            procProcessStart = Date.now();
+            procFeedHistory.length = 0;
+            if (el.processFeed) { el.processFeed.classList.add('hidden'); el.processFeed.innerHTML = ''; }
+            if (el.processEta) el.processEta.textContent = 'calculating…';
+            if (el.processStageText) el.processStageText.textContent = 'Starting…';
 
             // Create audio URL from the file for immediate playback
             if (state.audioUrl && state.audioUrl.startsWith('blob:')) {
@@ -1327,6 +1784,7 @@
                     let uploadStartTime = Date.now();
                     let lastLoaded = 0;
                     let lastTime = uploadStartTime;
+                    uploadSpeedEMA = 0;
 
                     // Track upload progress
                     xhr.upload.addEventListener('progress', (e) => {
@@ -1336,18 +1794,20 @@
                             const total = e.total;
                             const percent = Math.round((loaded / total) * 100);
 
-                            // Calculate speed (bytes per second)
+                            // Calculate instantaneous speed (bytes per second)
                             const timeDiff = (now - lastTime) / 1000; // seconds
                             const bytesDiff = loaded - lastLoaded;
 
-                            // Update every 100ms minimum to avoid jitter
-                            if (timeDiff >= 0.1) {
-                                const speed = bytesDiff / timeDiff; // bytes/sec
-                                const speedMBps = (speed / (1024 * 1024)).toFixed(2);
+                            // Update every 200ms minimum + use EMA smoothing for stable readout
+                            if (timeDiff >= 0.2) {
+                                const instSpeed = bytesDiff / timeDiff; // bytes/sec
+                                // Exponential moving average: 25% new / 75% prior — smooth but responsive
+                                uploadSpeedEMA = uploadSpeedEMA === 0 ? instSpeed : (uploadSpeedEMA * 0.75 + instSpeed * 0.25);
+                                const speedMBps = (uploadSpeedEMA / (1024 * 1024)).toFixed(2);
 
-                                // Calculate remaining time
+                                // ETA from smoothed speed
                                 const remaining = total - loaded;
-                                const etaSeconds = speed > 0 ? Math.ceil(remaining / speed) : 0;
+                                const etaSeconds = uploadSpeedEMA > 0 ? Math.ceil(remaining / uploadSpeedEMA) : 0;
                                 const etaFormatted = formatETA(etaSeconds);
 
                                 // Format loaded/total
@@ -1474,6 +1934,7 @@
             } finally {
                 stopTimer();
                 disconnectSSE();
+                clearActiveJob();
             }
         }
 
@@ -1599,10 +2060,18 @@
                 const div = document.createElement('div');
                 div.className = 'lyric-line';
                 div.dataset.idx = i;
-                div.innerHTML = `<span class="lyric-ts">${seg.startTime.replace(',', '.')}</span><p class="mt-0.5 leading-relaxed">${seg.text}</p>`;
+                div.innerHTML = `<span class="lyric-ts">${formatLyricTs(seg.startTime)}</span><p class="lyric-text leading-relaxed">${seg.text}</p>`;
                 div.addEventListener('click', () => seekToLyric(seg.startSec));
                 list.appendChild(div);
             });
+        }
+
+        // Convert "HH:MM:SS,mmm" → "MM:SS" (minutes overflow when >59min for long files)
+        function formatLyricTs(ts) {
+            const m = String(ts).match(/^(\d{1,3}):(\d{2}):(\d{2})[,.](\d{1,3})/);
+            if (!m) return ts;
+            const totalMin = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+            return `${String(totalMin).padStart(2, '0')}:${m[3]}`;
         }
 
         // --- AUDIO PLAYER ---
@@ -1748,6 +2217,16 @@
             currentLyricIdx = -1;
             renderLyrics(segments);
 
+            // Update toolbar stats (line count + total duration of last segment)
+            if (el.statCount) el.statCount.textContent = `${segments.length} ${segments.length === 1 ? 'line' : 'lines'}`;
+            if (el.statDuration && segments.length) {
+                const last = segments[segments.length - 1];
+                const dur = last.endSec || last.startSec || 0;
+                const mm = Math.floor(dur / 60);
+                const ss = Math.floor(dur % 60);
+                el.statDuration.textContent = `${mm}:${String(ss).padStart(2, '0')}`;
+            }
+
             // Raw editor (hidden by default)
             el.editor.value = state.srt.replace(/,\d{3}/g, '');
 
@@ -1792,11 +2271,31 @@
                             // Server sends 10-100, we display as 0-100
                             const displayPct = Math.max(0, Math.min(100, (d.percent - 10) * (100 / 90)));
                             updateProcessProgress(displayPct, d.stage, d.message);
+                            appendProcessFeed(d.message);
                         }
                         if (d.stage !== 'done') log(d.message);
                     }
                 } catch { }
             };
+        }
+
+        // Live status feed — keeps the last 3 SSE messages with timestamps for real-time visibility
+        const procFeedHistory = [];
+        function appendProcessFeed(msg) {
+            if (!msg || !el.processFeed) return;
+            const last = procFeedHistory[procFeedHistory.length - 1];
+            if (last && last.msg === msg) return;
+            const ts = new Date().toLocaleTimeString([], { hour12: false });
+            procFeedHistory.push({ ts, msg });
+            while (procFeedHistory.length > 3) procFeedHistory.shift();
+            el.processFeed.classList.remove('hidden');
+            el.processFeed.innerHTML = procFeedHistory.map((entry, i) => {
+                const dim = i < procFeedHistory.length - 1 ? 'opacity-50' : '';
+                return `<div class="flex items-start gap-2 ${dim}"><span class="text-slate-400 dark:text-slate-600 flex-shrink-0">${entry.ts}</span><span class="truncate">${escapeHtml(entry.msg)}</span></div>`;
+            }).join('');
+        }
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         }
 
         function disconnectSSE() { if (sse) { sse.close(); sse = null; } }
@@ -1848,7 +2347,7 @@
             el.processRing.style.strokeDashoffset = offset;
             el.processPct.textContent = Math.round(percent) + '%';
 
-            // Update stage label
+            // Update stage label (small text inside ring)
             const labels = {
                 converting: 'CONVERTING',
                 uploading: 'UPLOADING TO AI',
@@ -1859,9 +2358,107 @@
                 error: 'ERROR'
             };
             el.processStageLabel.textContent = labels[stage] || 'PROCESSING';
-            el.processMsg.textContent = msg;
+
+            // Human-friendly stage card text + descriptive message
+            const friendlyStage = {
+                converting: 'Converting audio',
+                uploading: 'Uploading to AI',
+                processing: 'Analyzing speech',
+                transcribing: 'Transcribing',
+                formatting: 'Finalizing subtitles',
+                complete: 'Complete',
+                done: 'Complete',
+                error: 'Error'
+            };
+            if (el.processStageText) el.processStageText.textContent = friendlyStage[stage] || 'Processing';
+
+            const friendlyMsg = {
+                converting: 'Cleaning and preparing your audio for transcription…',
+                uploading: 'Sending audio to the AI engine…',
+                processing: 'AI is listening to your audio…',
+                transcribing: 'Generating subtitles with timestamps…',
+                formatting: 'Polishing the final SRT output…',
+                complete: 'All done — your subtitles are ready.',
+                done: 'All done — your subtitles are ready.',
+                error: 'Something went wrong. Please try again.'
+            };
+            el.processMsg.textContent = msg && msg.length < 80 ? msg : (friendlyMsg[stage] || 'Working on your audio…');
+
+            // Track per-stage start time for "Stage · 0:43" sub-label
+            if (procStageName !== stage) {
+                procStageName = stage;
+                procStageStart = Date.now();
+            }
+
+            // Sample this percent for ETA window; remember last percent for ticker
+            procLastPercent = percent;
+            if (percent > 0 && percent < 100) {
+                procEtaSamples.push({ t: Date.now(), pct: percent });
+                while (procEtaSamples.length > 1 && Date.now() - procEtaSamples[0].t > 30000) {
+                    procEtaSamples.shift();
+                }
+            }
+            recomputeProcessEta(stage);
 
             updateProcessStages(stage);
+        }
+
+        // Recompute "Remaining" — called by SSE updates AND by the 1-second timer.
+        // Combines two strategies: local rolling-window rate (responsive) → total-elapsed
+        // fallback (always available the moment percent > 0). Never gets stuck on "calculating…".
+        function recomputeProcessEta(stageOverride) {
+            if (!el.processEta) return;
+            const stage = stageOverride || procStageName;
+            const percent = procLastPercent;
+            if (stage === 'complete' || stage === 'done' || percent >= 100) {
+                el.processEta.textContent = 'done';
+                return;
+            }
+            if (!(percent > 0 && percent < 100)) return;
+            const now = Date.now();
+            let etaSec = 0;
+            // 1. Local-window rate (responsive to slowdowns/speedups)
+            if (procEtaSamples.length >= 2) {
+                const first = procEtaSamples[0];
+                const last = procEtaSamples[procEtaSamples.length - 1];
+                const dPct = last.pct - first.pct;
+                const dT = (last.t - first.t) / 1000;
+                if (dPct > 0.1 && dT > 0.5) {
+                    etaSec = Math.ceil((100 - percent) / (dPct / dT));
+                }
+            }
+            // 2. Total-elapsed fallback (always works once we have any percent)
+            if (!etaSec && procProcessStart) {
+                const totalElapsed = (now - procProcessStart) / 1000;
+                if (totalElapsed > 2) {
+                    etaSec = Math.ceil((100 - percent) * (totalElapsed / percent));
+                }
+            }
+            if (etaSec > 0 && etaSec < 4 * 3600) {
+                el.processEta.textContent = formatETA(etaSec);
+            }
+        }
+
+        // Refresh the per-stage elapsed sub-label every second (called by the main timer)
+        function tickProcessSubInfo() {
+            if (!el.processStageText || !procStageStart || !procStageName) return;
+            // Append "· m:ss" to the friendly stage name showing how long this stage has been running
+            const stageElapsed = Math.floor((Date.now() - procStageStart) / 1000);
+            if (stageElapsed < 1) return;
+            const friendlyStage = {
+                converting: 'Converting',
+                uploading: 'Uploading to AI',
+                processing: 'Analyzing',
+                transcribing: 'Transcribing',
+                formatting: 'Finalizing',
+                complete: 'Complete',
+                done: 'Complete',
+                error: 'Error'
+            };
+            const label = friendlyStage[procStageName] || 'Processing';
+            const mm = Math.floor(stageElapsed / 60);
+            const ss = stageElapsed % 60;
+            el.processStageText.innerHTML = `${label}<span class="block text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-0.5">running ${mm}:${String(ss).padStart(2, '0')}</span>`;
         }
 
         function updateProcessStages(current) {
@@ -1887,7 +2484,11 @@
             stopTimer();
             const update = () => {
                 const s = Math.floor((Date.now() - start) / 1000);
-                el.elapsed.textContent = `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+                const txt = `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+                el.elapsed.textContent = txt;
+                if (el.processElapsed) el.processElapsed.textContent = txt;
+                tickProcessSubInfo();
+                recomputeProcessEta(); // refresh ETA every second even when SSE is silent
             };
             update();
             timer = setInterval(update, 1000);
@@ -2149,7 +2750,22 @@
         }
 
         async function copy() {
-            try { await navigator.clipboard.writeText(state.srt); toast('Copied to clipboard', 'success'); }
+            try {
+                await navigator.clipboard.writeText(state.srt);
+                toast('Copied to clipboard', 'success');
+                if (el.copyIcon && el.copyCheck && el.copyLabel) {
+                    el.copyIcon.classList.add('hidden');
+                    el.copyCheck.classList.remove('hidden');
+                    el.copyLabel.textContent = 'Copied';
+                    el.copyBtn.classList.add('text-emerald-600', 'dark:text-emerald-400');
+                    setTimeout(() => {
+                        el.copyIcon.classList.remove('hidden');
+                        el.copyCheck.classList.add('hidden');
+                        el.copyLabel.textContent = 'Copy';
+                        el.copyBtn.classList.remove('text-emerald-600', 'dark:text-emerald-400');
+                    }, 1500);
+                }
+            }
             catch { toast('Copy failed', 'error'); }
         }
 
@@ -2165,7 +2781,59 @@
         el.dropZone.ondrop = e => { e.preventDefault(); el.dropZone.classList.remove('drop-active'); selectFile(e.dataTransfer.files[0]); };
 
         // Init
-        el.wordsSlider.oninput = e => el.wordsValue.textContent = e.target.value;
+        function applyWordsValue() {
+            const s = el.wordsSlider;
+            const v = parseInt(s.value, 10);
+            const min = parseInt(s.min, 10);
+            const max = parseInt(s.max, 10);
+            const pct = ((v - min) / (max - min)) * 100;
+
+            // 1. Fill the gradient track up to the thumb
+            s.style.setProperty('--range-fill', pct + '%');
+
+            // 2. Update value number
+            if (el.wordsValue) el.wordsValue.textContent = v;
+
+            // 3. Float the value bubble above the thumb. Approximation accounting for
+            //    thumb radius so the bubble centers on the thumb at both ends.
+            if (el.wordsBubble) {
+                const thumbHalf = 9; // matches CSS thumb (18px wide)
+                const trackPx = s.clientWidth || 200;
+                const innerWidth = trackPx - thumbHalf * 2;
+                const offsetPx = thumbHalf + (pct / 100) * innerWidth;
+                el.wordsBubble.style.left = offsetPx + 'px';
+            }
+
+            // 4. Semantic hint: Short / Balanced / Long
+            const hint = v <= 5 ? 'Short' : v <= 9 ? 'Balanced' : 'Long';
+            if (el.wordsPresetHint) el.wordsPresetHint.textContent = hint;
+
+            // 5. Highlight matching preset chip
+            document.querySelectorAll('.words-preset').forEach(btn => {
+                const isActive = parseInt(btn.dataset.preset, 10) === v;
+                btn.classList.toggle('bg-primary-50', isActive);
+                btn.classList.toggle('dark:bg-primary-500/15', isActive);
+                btn.classList.toggle('border-primary-300', isActive);
+                btn.classList.toggle('dark:border-primary-500/40', isActive);
+                btn.classList.toggle('text-primary-700', isActive);
+                btn.classList.toggle('dark:text-primary-300', isActive);
+            });
+        }
+
+        el.wordsSlider.oninput = applyWordsValue;
+
+        // Preset chips set the slider value
+        document.querySelectorAll('.words-preset').forEach(btn => {
+            btn.addEventListener('click', () => {
+                el.wordsSlider.value = btn.dataset.preset;
+                applyWordsValue();
+            });
+        });
+
+        // Recompute bubble position on window resize (sidebar width is fixed but be safe)
+        window.addEventListener('resize', applyWordsValue);
+        // Run once after layout settles so bubble starts at the right position
+        requestAnimationFrame(applyWordsValue);
         el.languageSelect.onchange = e => {
             const val = e.target.value;
             if (val === 'auto') {
@@ -2268,7 +2936,155 @@
             }
         });
 
+        // Auto-resume an in-flight transcription if the page was reloaded mid-process.
+        // Pulls the cached active-job from localStorage, asks the server for its status,
+        // and either reopens the processing view (still running), the result view
+        // (finished while away), or surfaces an error/expired notice.
+        async function resumeActiveJobIfAny() {
+            const job = loadActiveJob();
+            if (!job) return;
+            try {
+                const res = await fetch(`${api}/api/result/${encodeURIComponent(job.jobId)}`);
+                if (res.status === 404) {
+                    toast('Previous job expired or was lost. Please re-upload.', 'info');
+                    clearActiveJob();
+                    return;
+                }
+                const data = await res.json();
+                if (data.status === 'ok' && data.result) {
+                    // Completed while we were away — go straight to result view
+                    state.srt = data.result.srt;
+                    state.timingReport = data.result.timingReport || '';
+                    state.filename = job.filename.replace(/\.[^.]+$/, '');
+                    if (data.result.audioFile) {
+                        state.audioFile = data.result.audioFile;
+                        state.audioUrl = `${api}/api/audio/${data.result.audioFile}`;
+                    }
+                    showResult();
+                    toast('Recovered your finished transcription.', 'success');
+                    clearActiveJob();
+                    return;
+                }
+                if (data.status === 'error') {
+                    toast(`Previous job failed: ${data.error?.message || 'unknown error'}`, 'error');
+                    clearActiveJob();
+                    return;
+                }
+                if (data.status === 'running') {
+                    // Still running — reopen processing UI and reconnect to SSE
+                    el.uploadView.classList.add('hidden');
+                    el.processingView.classList.remove('hidden');
+                    if (el.statusText) el.statusText.textContent = 'Processing';
+
+                    // File chip
+                    if (el.procFileChip) {
+                        el.procFileName.textContent = job.filename;
+                        const mb = job.fileSize / (1024 * 1024);
+                        el.procFileSize.textContent = mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.round(job.fileSize / 1024)} KB`;
+                        el.procFileChip.classList.remove('hidden');
+                        el.procFileChip.classList.add('flex');
+                    }
+
+                    // Wire up timers + progress trackers
+                    procEtaSamples.length = 0;
+                    procStageStart = Date.now();
+                    procStageName = null;
+                    procProcessStart = job.startedAt; // ETA based on real start
+                    start = job.startedAt;
+                    startTimer();
+                    showProcessPhase();
+
+                    // Apply current snapshot immediately
+                    if (data.progress) {
+                        const displayPct = Math.max(0, Math.min(100, (data.progress.percent - 10) * (100 / 90)));
+                        updateProcessProgress(displayPct, data.progress.stage, data.progress.message);
+                    }
+
+                    // Reconnect SSE for live updates + poll /api/result for completion
+                    connectSSE(job.jobId);
+                    const poll = setInterval(async () => {
+                        try {
+                            const r = await fetch(`${api}/api/result/${encodeURIComponent(job.jobId)}`);
+                            if (!r.ok) return;
+                            const d = await r.json();
+                            if (d.status === 'ok' && d.result) {
+                                clearInterval(poll);
+                                state.srt = d.result.srt;
+                                state.timingReport = d.result.timingReport || '';
+                                state.filename = job.filename.replace(/\.[^.]+$/, '');
+                                if (d.result.audioFile) {
+                                    state.audioFile = d.result.audioFile;
+                                    state.audioUrl = `${api}/api/audio/${d.result.audioFile}`;
+                                }
+                                stopTimer();
+                                disconnectSSE();
+                                showResult();
+                                // Save to history since the original POST happened on the dead page
+                                saveHistory(state.filename, d.result.srt, job.wordLimit, job.language, d.result.audioFile);
+                                toast('Subtitles ready!', 'success');
+                                clearActiveJob();
+                            } else if (d.status === 'error') {
+                                clearInterval(poll);
+                                stopTimer();
+                                disconnectSSE();
+                                toast(`Job failed: ${d.error?.message || 'unknown'}`, 'error');
+                                clearActiveJob();
+                                setTimeout(reset, 4000);
+                            }
+                        } catch { }
+                    }, 3000);
+
+                    toast(`Resumed: ${job.filename}`, 'info');
+                }
+            } catch (e) {
+                console.warn('Resume failed', e);
+                clearActiveJob();
+            }
+        }
+
+        // Sidebar collapse / expand
+        (function () {
+            const sidebar = document.getElementById('sidebar');
+            const toggleBtn = document.getElementById('sidebar-toggle');
+            const toggleIcon = document.getElementById('sidebar-toggle-icon');
+            if (!sidebar || !toggleBtn) return;
+
+            const SIDEBAR_OPEN_LEFT = '274px';
+            const SIDEBAR_CLOSED_LEFT = '8px';
+
+            function applySidebarState(collapsed) {
+                if (collapsed) {
+                    sidebar.classList.add('collapsed');
+                    toggleBtn.style.left = SIDEBAR_CLOSED_LEFT;
+                    toggleIcon.style.transform = 'rotate(180deg)';
+                    toggleBtn.setAttribute('aria-expanded', 'false');
+                } else {
+                    sidebar.classList.remove('collapsed');
+                    toggleBtn.style.left = SIDEBAR_OPEN_LEFT;
+                    toggleIcon.style.transform = 'rotate(0deg)';
+                    toggleBtn.setAttribute('aria-expanded', 'true');
+                }
+            }
+
+            // Restore saved state
+            const stored = localStorage.getItem('sidebar-collapsed') === 'true';
+            applySidebarState(stored);
+
+            toggleBtn.addEventListener('click', () => {
+                const next = !sidebar.classList.contains('collapsed');
+                applySidebarState(next);
+                localStorage.setItem('sidebar-collapsed', next ? 'true' : 'false');
+                // After the slider re-appears, the floating words-bubble may need repositioning
+                if (!next && typeof applyWordsValue === 'function') {
+                    setTimeout(applyWordsValue, 320);
+                }
+            });
+        })();
+
         console.log('SRT Studio initialized');
+
+        // Recover any in-flight job after a reload (no-op if nothing pending)
+        resumeActiveJobIfAny();
     </script>
 </body>
 

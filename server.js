@@ -275,6 +275,11 @@ const activeJobs = new Map();
 // SSE clients for progress updates
 const progressClients = new Map();
 
+// Completed/failed results kept short-term so a reloaded client can recover its job.
+// Stored in-memory keyed by jobId. Auto-evicted after RESULT_TTL_MS.
+const jobResults = new Map();
+const RESULT_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
 function updateProgress(jobId, stage, percent, message) {
     const progress = { stage, percent, message, timestamp: Date.now() };
     activeJobs.set(jobId, progress);
@@ -513,253 +518,100 @@ app.post('/api/transcribe', upload.single('file'), async (req, res) => {
         const vocabulary = req.body.vocabulary ? req.body.vocabulary.split(',').map(v => v.trim()).filter(v => v) : [];
 
         // -------------------------------------------------------
-        // STEP 3 (PRIMARY): Google Speech-to-Text — waveform-accurate
-        // word-level timings AND segmentation at real audio pauses.
-        // Trying to merge Gemini's text into STT timings produced worse
-        // alignment than pure STT, so we keep this path simple.
-        //
-        // Skipped entirely when TRANSCRIPTION_MODE=vertex — the user explicitly
-        // wants Gemini-on-Vertex (e.g. when they have credits there and have
-        // not provisioned STT IAM / HF inference permissions).
+        // TRANSCRIPTION DISPATCHER — three modes:
+        //   • vertex  : Gemini-on-Vertex only (estimated timestamps)
+        //   • auto    : STT cascade with Gemini as fallback (default)
+        //   • hybrid  : STT + Gemini in parallel, merged via alignment.
+        //               Gemini supplies text (better word coverage),
+        //               STT supplies waveform-accurate word timings.
         // -------------------------------------------------------
         const transcriptionMode = (process.env.TRANSCRIPTION_MODE || 'auto').toLowerCase();
         let jsonResponse = null;
         let usedSTT = false;
-
-        let sttWords = null;
-        let sttModel = null;
+        let transcriptionSource = 'unknown';
 
         if (transcriptionMode === 'vertex') {
-            log('info', 'TRANSCRIPTION_MODE=vertex — skipping STT cascade, using Gemini directly', { jobId: jobId.substring(0, 8) });
-        } else {
-            // Tier 1: HuggingFace Whisper-large-v3 (same model TurboScribe uses —
-            // highest word coverage). Constrained by HF's 25MB upload limit, so
-            // only works on shorter clips (~13 min of 16kHz mono WAV).
-            if (hfClient) {
-                try {
-                    updateProgress(jobId, 'transcribing', 55, 'Transcribing with Whisper-large-v3...');
-                    sttWords = await getWordTimestampsWhisperHF(audioPath);
-                    if (sttWords && sttWords.length > 0) {
-                        sttModel = 'whisper-large-v3 (HF)';
-                    } else {
-                        sttWords = null;
-                    }
-                } catch (hfErr) {
-                    log('warn', 'HF Whisper unavailable — trying chirp_2', {
-                        jobId: jobId.substring(0, 8),
-                        error: hfErr.message,
-                    });
-                }
+            log('info', 'TRANSCRIPTION_MODE=vertex — Gemini-on-Vertex only', { jobId: jobId.substring(0, 8) });
+            updateProgress(jobId, 'transcribing', 75, `Transcribing with ${GEMINI_MODEL}...`);
+            jsonResponse = await runVertexGemini(audioPath, gcsUri, audioDuration, wordLimit, vocabulary, language, jobId);
+            transcriptionSource = 'gemini';
+        }
+        else if (transcriptionMode === 'hybrid') {
+            log('info', 'TRANSCRIPTION_MODE=hybrid — running STT and Gemini in parallel', { jobId: jobId.substring(0, 8) });
+            updateProgress(jobId, 'transcribing', 50, 'Running STT and Gemini in parallel (cross-validation)...');
+
+            const [sttResult, geminiResult] = await Promise.allSettled([
+                runSTTCascade(audioPath, gcsUri, language, jobId),
+                runVertexGemini(audioPath, gcsUri, audioDuration, wordLimit, vocabulary, language, jobId),
+            ]);
+
+            const sttData = sttResult.status === 'fulfilled' ? sttResult.value : null;
+            const sttWords = sttData?.words;
+            const geminiJson = geminiResult.status === 'fulfilled' ? geminiResult.value : null;
+
+            if (sttResult.status === 'rejected') {
+                log('warn', 'Hybrid: STT cascade failed', { jobId: jobId.substring(0, 8), error: sttResult.reason?.message });
+            }
+            if (geminiResult.status === 'rejected') {
+                log('warn', 'Hybrid: Gemini failed', { jobId: jobId.substring(0, 8), error: geminiResult.reason?.message });
             }
 
-            // Tier 2: chirp_2 (Google's newest model — V2 API)
-            if (!sttWords) {
-                try {
-                    updateProgress(jobId, 'transcribing', 60, 'Analyzing speech with chirp_2 model...');
-                    sttWords = await getWordTimestampsChirp2(gcsUri, language);
-                    if (sttWords && sttWords.length > 0) {
-                        sttModel = 'chirp_2';
-                    } else {
-                        log('warn', 'chirp_2 returned no words — trying latest_long', { jobId: jobId.substring(0, 8) });
-                        sttWords = null;
-                    }
-                } catch (chirpErr) {
-                    log('warn', 'chirp_2 failed — trying latest_long', {
-                        jobId: jobId.substring(0, 8),
-                        error: chirpErr.message,
-                    });
-                }
-            }
-
-            // Tier 3: latest_long (V1 API — reliable baseline)
-            if (!sttWords) {
-                try {
-                    updateProgress(jobId, 'transcribing', 65, 'Analyzing speech with latest_long model...');
-                    sttWords = await getWordTimestamps(gcsUri, language);
-                    if (sttWords && sttWords.length > 0) {
-                        sttModel = 'latest_long';
-                    }
-                } catch (sttErr) {
-                    log('warn', 'latest_long also failed — falling back to Gemini', {
-                        jobId: jobId.substring(0, 8),
-                        error: sttErr.message,
-                    });
-                }
+            if (sttWords && geminiJson) {
+                log('info', `Hybrid: merging Gemini text with ${sttWords.length} STT word timings (model: ${sttData.model})`, { jobId: jobId.substring(0, 8) });
+                jsonResponse = alignJsonTimestamps(geminiJson, sttWords);
+                // Gap-fill pass: insert STT-only cues into sections where Gemini missed
+                // speech entirely. alignJsonTimestamps fixes timestamps but doesn't add
+                // cues, so missed-by-Gemini speech stayed missing pre-fix.
+                jsonResponse = fillSttGaps(jsonResponse, sttWords, 3.0, wordLimit);
+                usedSTT = true;
+                transcriptionSource = `hybrid (${sttData.model} + ${GEMINI_MODEL})`;
+            } else if (sttWords) {
+                log('warn', `Hybrid: Gemini failed, using STT (${sttData.model}) alone`, { jobId: jobId.substring(0, 8) });
+                jsonResponse = buildSegmentsFromSTT(sttWords, wordLimit);
+                usedSTT = true;
+                transcriptionSource = sttData.model;
+            } else if (geminiJson) {
+                log('warn', 'Hybrid: STT failed, using Gemini alone (timestamps will be estimated)', { jobId: jobId.substring(0, 8) });
+                jsonResponse = geminiJson;
+                transcriptionSource = 'gemini (STT unavailable)';
+            } else {
+                throw new Error('Both STT and Gemini failed in hybrid mode. Check your API credentials and quota.');
             }
         }
+        else {
+            // auto mode: STT cascade first, Gemini as fallback
+            log('info', 'TRANSCRIPTION_MODE=auto — STT cascade, Gemini fallback', { jobId: jobId.substring(0, 8) });
 
-        if (sttWords && sttWords.length > 0) {
-            jsonResponse = buildSegmentsFromSTT(sttWords, wordLimit);
-            usedSTT = true;
-            log('info', `STT transcription successful via ${sttModel}`, {
-                jobId: jobId.substring(0, 8),
-                wordCount: sttWords.length,
-                model: sttModel,
-            });
-        }
-
-        // -------------------------------------------------------
-        // STEP 3 (FALLBACK): Gemini via Vertex AI — used only when STT
-        // fails. Timestamps will be estimated, less accurate than STT.
-        // -------------------------------------------------------
-        if (!jsonResponse) {
-        updateProgress(jobId, 'transcribing', 75, `Transcribing with ${GEMINI_MODEL}...`);
-
-        // -- Long-audio path: chunk into 8-min pieces and call Vertex per chunk.
-        // Vertex Gemini-2.5-Pro silently truncates audio >~15 min when sent in one
-        // request. Chunking forces the model to fully process every region.
-        let response = null;
-        const useVertexChunking = audioDuration > VERTEX_CHUNK_THRESHOLD_SEC;
-
-        if (useVertexChunking) {
-            log('info', `Audio ${audioDuration.toFixed(1)}s > ${VERTEX_CHUNK_THRESHOLD_SEC}s — using Vertex chunking path`, { jobId: jobId.substring(0, 8) });
-            jsonResponse = await transcribeVertexInChunks(
-                audioPath, audioDuration, wordLimit, vocabulary, language, jobId
-            );
-            // Skip the rest of the single-shot block — jsonResponse is set.
-        } else {
-
-        let transcriptionAttempts = 0;
-
-        while (transcriptionAttempts < 2) {
+            let sttData = null;
             try {
-                log('info', `Transcription attempt ${transcriptionAttempts + 1}`, { jobId: jobId.substring(0, 8), model: GEMINI_MODEL });
-                response = await aiClient.models.generateContent({
-                    model: GEMINI_MODEL,
-                    config: {
-                        temperature: 0,  // Fully deterministic — critical for consistent timestamps
-                        topP: 0.95,
-                        maxOutputTokens: 65536,  // Gemini 2.5 Pro cap — avoid mid-transcription truncation on long audio
-                        responseMimeType: 'application/json',  // Force clean JSON (no ```json fences)
-                        // Match AI Studio permissiveness so transcription isn't silently
-                        // rewritten/dropped by Vertex's stricter default safety filters.
-                        safetySettings: VERTEX_SAFETY_SETTINGS,
-                    },
-                    contents: [
-                        {
-                            role: 'user',
-                            parts: [
-                                { text: buildEnhancedPrompt(wordLimit, vocabulary, audioDuration, language) },
-                                { fileData: { mimeType: 'audio/wav', fileUri: gcsUri } }
-                            ]
-                        }
-                    ]
+                sttData = await runSTTCascade(audioPath, gcsUri, language, jobId);
+            } catch (e) {
+                log('warn', 'STT cascade threw', { jobId: jobId.substring(0, 8), error: e.message });
+            }
+
+            if (sttData?.words?.length > 0) {
+                log('info', `STT transcription successful via ${sttData.model}`, {
+                    jobId: jobId.substring(0, 8),
+                    wordCount: sttData.words.length,
+                    model: sttData.model,
                 });
-                break; // Success
-            } catch (genError) {
-                transcriptionAttempts++;
-                log('warn', `Transcription attempt ${transcriptionAttempts} failed`, { error: genError.message });
-                if (transcriptionAttempts >= 2) {
-                    throw new Error(`AI transcription failed: ${genError.message}`);
-                }
-                // Wait 15s before retry (not 2s — network errors need a real pause)
-                await new Promise(resolve => setTimeout(resolve, 15000));
-                updateProgress(jobId, 'transcribing', 76, `Retrying transcription...`);
+                jsonResponse = buildSegmentsFromSTT(sttData.words, wordLimit);
+                // Dead-zone retry: find gaps >10s, re-run chirp_2 on those clips
+                // alone, splice recovered cues back in. Catches speech that the
+                // main pass dropped due to context-related model failures.
+                updateProgress(jobId, 'transcribing', 85, 'Checking for dead zones and recovering missed speech...');
+                jsonResponse = await fillDeadZonesViaRetry(jsonResponse, audioPath, language, jobId);
+                usedSTT = true;
+                transcriptionSource = sttData.model;
+            } else {
+                log('info', 'STT cascade returned no words — falling back to Gemini', { jobId: jobId.substring(0, 8) });
+                updateProgress(jobId, 'transcribing', 75, `Transcribing with ${GEMINI_MODEL}...`);
+                jsonResponse = await runVertexGemini(audioPath, gcsUri, audioDuration, wordLimit, vocabulary, language, jobId);
+                transcriptionSource = 'gemini (fallback)';
             }
         }
-        }  // end of single-shot else branch
 
         updateProgress(jobId, 'formatting', 90, 'Formatting SRT output...');
-
-        // -------------------------------------------------------
-        // STEP 5: Convert JSON to SRT (Perfect Formatting)
-        // -------------------------------------------------------
-
-        // Skip single-shot response parsing if chunked path already produced jsonResponse
-        if (!useVertexChunking) {
-
-        // Debug: Check for safety blocks or empty candidates
-        if (response.promptFeedback?.blockReason) {
-            log('warn', 'Content blocked by Gemini safety filters', {
-                blockReason: response.promptFeedback.blockReason,
-                safetyRatings: response.promptFeedback.safetyRatings
-            });
-
-            // Try Whisper fallback if available
-            if (ENABLE_WHISPER_FALLBACK && hfClient) {
-                log('info', 'Attempting Whisper fallback for blocked content', { jobId: jobId.substring(0, 8) });
-
-                try {
-                    const whisperSRT = await transcribeWithWhisper(wavPath, wordLimit, jobId);
-
-                    // Success! Return the Whisper result
-                    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-                    updateProgress(jobId, 'complete', 100, `Completed via Whisper in ${duration}s`);
-
-                    const subtitleCount = (whisperSRT.match(/\n\n/g) || []).length + 1;
-                    log('info', 'Transcription completed successfully via Whisper fallback', {
-                        jobId: jobId.substring(0, 8),
-                        duration: `${duration}s`,
-                        subtitleCount
-                    });
-
-                    return res.json({
-                        success: true,
-                        srt: whisperSRT,
-                        duration: `${duration}s`,
-                        subtitleCount,
-                        usedFallback: true,
-                        fallbackReason: 'Content blocked by Gemini safety filters'
-                    });
-                } catch (whisperError) {
-                    log('error', 'Whisper fallback also failed', { error: whisperError.message });
-                    throw new Error(`Content blocked by AI safety filters and Whisper fallback failed: ${whisperError.message}`);
-                }
-            }
-
-            // No fallback available
-            throw new Error(`Content blocked by AI safety filters: ${response.promptFeedback.blockReason}. Please try a different audio file.`);
-        }
-
-        if (!response.candidates || response.candidates.length === 0) {
-            log('error', 'No candidates in response', {
-                hasPromptFeedback: !!response.promptFeedback,
-                responseKeys: Object.keys(response)
-            });
-            throw new Error('AI did not generate any response. This may be due to audio quality issues or content restrictions. Please try a different audio file.');
-        }
-
-        // Check if candidate was blocked
-        const candidate = response.candidates[0];
-        if (candidate.finishReason && candidate.finishReason !== 'STOP') {
-            log('warn', 'Generation stopped early', {
-                finishReason: candidate.finishReason,
-                safetyRatings: candidate.safetyRatings
-            });
-
-            if (candidate.finishReason === 'SAFETY') {
-                throw new Error('Content generation stopped due to safety concerns. Please try a different audio file.');
-            }
-
-            if (candidate.finishReason === 'MAX_TOKENS') {
-                log('warn', 'Transcription incomplete due to MAX_TOKENS limit', {
-                    jobId: jobId.substring(0, 8),
-                    message: 'Audio file is too long for single transcription. Output will be incomplete.'
-                });
-                // Continue processing but the output will be incomplete
-                // The user will see a warning in the logs
-            }
-        }
-
-        // Debug: Log the response structure
-        log('debug', 'Response object keys', { keys: Object.keys(response || {}) });
-        log('debug', 'Response type', { type: typeof response, hasText: !!response?.text });
-
-        const rawResponse = response?.text || response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        log('debug', 'AI response received', { length: rawResponse.length, preview: rawResponse.substring(0, 200) });
-
-        jsonResponse = cleanOutput(rawResponse);
-
-        if (!jsonResponse || jsonResponse.trim().length === 0) {
-            log('error', 'Empty response after cleaning', {
-                rawLength: rawResponse.length,
-                cleanedLength: jsonResponse?.length || 0,
-                responseStructure: JSON.stringify(response).substring(0, 500)
-            });
-            throw new Error('Empty response from AI. Please try again or use a different audio file.');
-        }
-        }  // end of !useVertexChunking branch
-        } // end of Gemini block
 
         if (!jsonResponse || jsonResponse.trim() === '[]') {
             log('warn', 'No speech detected in audio', { jobId });
@@ -770,7 +622,7 @@ app.post('/api/transcribe', upload.single('file'), async (req, res) => {
         // STEP 4: Convert transcription JSON → SRT
         // jsonResponse is from STT (primary) or Gemini fallback.
         // -------------------------------------------------------
-        log('info', `Transcription source: ${usedSTT ? 'Speech-to-Text' : 'Gemini'}`, { jobId: jobId.substring(0, 8) });
+        log('info', `Transcription source: ${transcriptionSource}`, { jobId: jobId.substring(0, 8) });
 
         const { srt: srtOutput, timingReport } = jsonToSrt(jsonResponse, wordLimit, audioDuration);
 
@@ -781,6 +633,19 @@ app.post('/api/transcribe', upload.single('file'), async (req, res) => {
 
         const duration = ((Date.now() - startTime) / 1000).toFixed(1);
 
+        // Persist the EXACT audio the AI saw (the transcoded WAV) so playback in the UI
+        // is bit-identical with what produced the timestamps — guarantees player sync.
+        let storedAudioName = null;
+        try {
+            storedAudioName = `${jobId}.wav`;
+            const storedAudioPath = path.join(STORED_AUDIO_DIR, storedAudioName);
+            await fsPromises.copyFile(audioPath, storedAudioPath);
+            log('debug', 'Stored audio for replay', { file: storedAudioName });
+        } catch (e) {
+            log('warn', 'Failed to store audio for replay', { error: e.message });
+            storedAudioName = null;
+        }
+
         updateProgress(jobId, 'complete', 100, `Completed in ${duration}s`);
 
         log('info', `Job completed successfully`, {
@@ -789,7 +654,12 @@ app.post('/api/transcribe', upload.single('file'), async (req, res) => {
             subtitleCount: srtOutput.split('\n\n').length
         });
 
-        res.json({ srt: srtOutput, timingReport, jobId, duration, language });
+        const result = { srt: srtOutput, timingReport, jobId, duration, language, audioFile: storedAudioName };
+        // Stash so a reloaded client can recover via GET /api/result/:jobId
+        jobResults.set(jobId, { status: 'ok', completedAt: Date.now(), result });
+        setTimeout(() => jobResults.delete(jobId), RESULT_TTL_MS);
+
+        res.json(result);
 
     } catch (error) {
         log('error', 'Transcription failed', {
@@ -827,14 +697,19 @@ app.post('/api/transcribe', upload.single('file'), async (req, res) => {
             errorType = 'ai_processing_error';
         }
 
+        const errPayload = {
+            error: errorType,
+            message: userMessage,
+            details: isProduction ? undefined : error.message,
+            jobId,
+            timestamp: new Date().toISOString()
+        };
+        // Cache error so a reloaded client can see what went wrong
+        jobResults.set(jobId, { status: 'error', completedAt: Date.now(), error: errPayload });
+        setTimeout(() => jobResults.delete(jobId), RESULT_TTL_MS);
+
         if (!res.headersSent) {
-            res.status(statusCode).json({
-                error: errorType,
-                message: userMessage,
-                details: isProduction ? undefined : error.message,
-                jobId,
-                timestamp: new Date().toISOString()
-            });
+            res.status(statusCode).json(errPayload);
         }
 
     } finally {
@@ -863,6 +738,117 @@ app.post('/api/transcribe', upload.single('file'), async (req, res) => {
         // Remove job from tracking after 5 minutes
         setTimeout(() => activeJobs.delete(jobId), 5 * 60 * 1000);
     }
+});
+
+// ═══════════════════════════════════════════════════════════
+//   HISTORY + STORED AUDIO (persistent server-side state)
+// ═══════════════════════════════════════════════════════════
+
+const STORED_AUDIO_DIR = path.join(__dirname, 'stored_audio');
+const HISTORY_FILE = path.join(__dirname, 'history.json');
+const HISTORY_MAX_ENTRIES = 50;
+
+if (!fs.existsSync(STORED_AUDIO_DIR)) {
+    fs.mkdirSync(STORED_AUDIO_DIR, { recursive: true });
+}
+
+function readHistory() {
+    try {
+        const raw = fs.readFileSync(HISTORY_FILE, 'utf8');
+        const arr = JSON.parse(raw);
+        return Array.isArray(arr) ? arr : [];
+    } catch {
+        return [];
+    }
+}
+
+function writeHistory(arr) {
+    fs.writeFileSync(HISTORY_FILE, JSON.stringify(arr, null, 2));
+}
+
+function deleteStoredAudio(audioFile) {
+    if (!audioFile) return;
+    const safe = path.basename(audioFile);
+    const p = path.join(STORED_AUDIO_DIR, safe);
+    if (fs.existsSync(p)) {
+        try { fs.unlinkSync(p); } catch (e) {
+            log('warn', 'Failed to delete stored audio', { file: safe, error: e.message });
+        }
+    }
+}
+
+// GET — list all entries (most recent first; matches frontend expectation)
+app.get('/api/history', (req, res) => {
+    res.json(readHistory());
+});
+
+// POST — append a new entry. Caps at HISTORY_MAX_ENTRIES; oldest dropped first.
+app.post('/api/history', (req, res) => {
+    const { name, content, words, language, audioFile } = req.body || {};
+    if (!name || !content) {
+        return res.status(400).json({ error: 'bad_request', message: 'name and content are required' });
+    }
+    const h = readHistory();
+    h.unshift({
+        id: Date.now(),
+        name: String(name).slice(0, 200),
+        content: String(content),
+        words: typeof words === 'number' ? words : parseInt(words) || 8,
+        language: language || 'auto',
+        audioFile: audioFile || null,
+        date: new Date().toISOString()
+    });
+    // Cap + cascade-delete audio of dropped entries so disk doesn't bloat
+    while (h.length > HISTORY_MAX_ENTRIES) {
+        const dropped = h.pop();
+        deleteStoredAudio(dropped.audioFile);
+    }
+    writeHistory(h);
+    res.json({ ok: true, count: h.length });
+});
+
+// DELETE one entry by id
+app.delete('/api/history/:id', (req, res) => {
+    const id = Number(req.params.id);
+    let h = readHistory();
+    const dropped = h.find(x => x.id === id);
+    h = h.filter(x => x.id !== id);
+    if (dropped) deleteStoredAudio(dropped.audioFile);
+    writeHistory(h);
+    res.json({ ok: true });
+});
+
+// DELETE everything
+app.delete('/api/history', (req, res) => {
+    const h = readHistory();
+    h.forEach(item => deleteStoredAudio(item.audioFile));
+    writeHistory([]);
+    res.json({ ok: true });
+});
+
+// Resume in-flight or recently-finished jobs after a page reload.
+// Returns: { status: 'running' | 'ok' | 'error', progress?, result?, error? }
+app.get('/api/result/:jobId', (req, res) => {
+    const jobId = req.params.jobId;
+    const cached = jobResults.get(jobId);
+    if (cached) {
+        return res.json({ status: cached.status, ...(cached.result ? { result: cached.result } : {}), ...(cached.error ? { error: cached.error } : {}), completedAt: cached.completedAt });
+    }
+    const progress = activeJobs.get(jobId);
+    if (progress) {
+        return res.json({ status: 'running', progress });
+    }
+    res.status(404).json({ status: 'unknown', message: 'Job not found (may have expired)' });
+});
+
+// Stream stored audio (used by the in-app player so playback stays in sync with the SRT)
+app.get('/api/audio/:filename', (req, res) => {
+    const safe = path.basename(req.params.filename); // strip any path traversal attempts
+    const p = path.join(STORED_AUDIO_DIR, safe);
+    if (!fs.existsSync(p)) {
+        return res.status(404).json({ error: 'not_found', message: 'Audio not found' });
+    }
+    res.sendFile(p);
 });
 
 // Fallback for SPA
@@ -1316,6 +1302,255 @@ async function transcribeVertexInChunks(audioPath, totalDuration, wordLimit, voc
     }
 }
 
+// ═══════════════════════════════════════════════════════════
+//   TRANSCRIPTION HELPERS (used by vertex/auto/hybrid dispatcher)
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Run the STT cascade: Whisper-large-v3 (HF) → chirp_2 (Google V2) → latest_long (Google V1).
+ * Returns the first tier that produces words. Throws nothing — returns null if all tiers fail
+ * so the caller can decide how to handle missing STT in hybrid vs auto modes.
+ *
+ * @returns {Promise<{words: Array, model: string} | null>}
+ */
+async function runSTTCascade(audioPath, gcsUri, language, jobId) {
+    // Tier 1: HuggingFace Whisper-large-v3 (highest word coverage; chunked at silence
+    // boundaries for files larger than HF's ~25MB upload cap). Gated by
+    // ENABLE_WHISPER_FALLBACK so users can skip it entirely when HF is unreliable.
+    if (hfClient && ENABLE_WHISPER_FALLBACK) {
+        try {
+            updateProgress(jobId, 'transcribing', 55, 'Transcribing with Whisper-large-v3...');
+            const words = await getWordTimestampsWhisperHF(audioPath);
+            if (words && words.length > 0) {
+                return { words, model: 'whisper-large-v3 (HF)' };
+            }
+        } catch (e) {
+            log('warn', 'HF Whisper unavailable — trying chirp_2', {
+                jobId: jobId.substring(0, 8), error: e.message,
+            });
+        }
+    } else if (hfClient && !ENABLE_WHISPER_FALLBACK) {
+        log('info', 'Skipping HF Whisper (ENABLE_WHISPER_FALLBACK=false) — going straight to chirp_2',
+            { jobId: jobId.substring(0, 8) });
+    }
+
+    // Tier 2: chirp_2 (Google's newest universal speech model — V2 API).
+    try {
+        updateProgress(jobId, 'transcribing', 60, 'Analyzing speech with chirp_2 model...');
+        const words = await getWordTimestampsChirp2(gcsUri, language);
+        if (words && words.length > 0) {
+            return { words, model: 'chirp_2' };
+        }
+    } catch (e) {
+        log('warn', 'chirp_2 failed — trying latest_long', {
+            jobId: jobId.substring(0, 8), error: e.message,
+        });
+    }
+
+    // Tier 3: latest_long (V1 API — reliable baseline).
+    try {
+        updateProgress(jobId, 'transcribing', 65, 'Analyzing speech with latest_long model...');
+        const words = await getWordTimestamps(gcsUri, language);
+        if (words && words.length > 0) {
+            return { words, model: 'latest_long' };
+        }
+    } catch (e) {
+        log('warn', 'latest_long failed', {
+            jobId: jobId.substring(0, 8), error: e.message,
+        });
+    }
+
+    return null;
+}
+
+/**
+ * Run Gemini-on-Vertex for transcription. Uses chunked path for long audio
+ * (>VERTEX_CHUNK_THRESHOLD_SEC) to dodge silent truncation. Returns the cleaned
+ * JSON string ([{start, end, text}, ...]). Throws on safety block, MAX_TOKENS
+ * with empty content, or empty response. Caller wraps in try/catch when running
+ * in parallel with STT (hybrid mode).
+ *
+ * @returns {Promise<string>} JSON string of segments
+ */
+async function runVertexGemini(audioPath, gcsUri, audioDuration, wordLimit, vocabulary, language, jobId) {
+    // Long audio: chunk it. Vertex Gemini-2.5-Pro silently truncates audio >~15 min
+    // in a single request — chunking forces full coverage.
+    if (audioDuration > VERTEX_CHUNK_THRESHOLD_SEC) {
+        log('info', `Audio ${audioDuration.toFixed(1)}s > ${VERTEX_CHUNK_THRESHOLD_SEC}s — using Vertex chunking`,
+            { jobId: jobId.substring(0, 8) });
+        return await transcribeVertexInChunks(
+            audioPath, audioDuration, wordLimit, vocabulary, language, jobId
+        );
+    }
+
+    // Single-shot path for shorter audio
+    let response = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+            log('info', `Gemini attempt ${attempt}`, { jobId: jobId.substring(0, 8), model: GEMINI_MODEL });
+            response = await aiClient.models.generateContent({
+                model: GEMINI_MODEL,
+                config: {
+                    temperature: 0,
+                    topP: 0.95,
+                    maxOutputTokens: 65536,
+                    responseMimeType: 'application/json',
+                    safetySettings: VERTEX_SAFETY_SETTINGS,
+                },
+                contents: [{
+                    role: 'user',
+                    parts: [
+                        { text: buildEnhancedPrompt(wordLimit, vocabulary, audioDuration, language) },
+                        { fileData: { mimeType: 'audio/wav', fileUri: gcsUri } }
+                    ]
+                }]
+            });
+            break;
+        } catch (e) {
+            log('warn', `Gemini attempt ${attempt} failed`, { error: e.message });
+            if (attempt >= 2) throw new Error(`Gemini transcription failed: ${e.message}`);
+            await new Promise(r => setTimeout(r, 15000));
+        }
+    }
+
+    if (response.promptFeedback?.blockReason) {
+        throw new Error(`Gemini content blocked by safety filters: ${response.promptFeedback.blockReason}`);
+    }
+    if (!response.candidates || response.candidates.length === 0) {
+        throw new Error('Gemini returned no candidates');
+    }
+    const candidate = response.candidates[0];
+    if (candidate.finishReason === 'SAFETY') {
+        throw new Error('Gemini stopped due to safety');
+    }
+    if (candidate.finishReason === 'MAX_TOKENS') {
+        log('warn', 'Gemini hit MAX_TOKENS — transcription may be incomplete', { jobId: jobId.substring(0, 8) });
+    }
+
+    const rawText = response?.text || candidate?.content?.parts?.[0]?.text || '';
+    const cleaned = cleanOutput(rawText);
+    if (!cleaned || cleaned.trim().length === 0) {
+        throw new Error('Gemini returned empty response after cleaning');
+    }
+    return cleaned;
+}
+
+/**
+ * Dead-zone retry pass: detect inter-cue gaps >minGapSec, extract just those
+ * audio clips, re-run chirp_2 on them, and splice recovered words back in.
+ *
+ * Why this works: chirp_2 sometimes drops speech on long-form audio when there's
+ * cross-talk, quiet speech, or background noise. Feeding it ONLY the missed
+ * section (without surrounding context) often recovers the lost words —
+ * confirmed empirically on voice.mp3 where gaps at 15:04 and 15:39 yielded
+ * 45 new words on retry that were missed in the main pass.
+ *
+ * Processes gaps in parallel via Promise.allSettled. Failures on individual
+ * gaps are logged but don't fail the whole pass.
+ *
+ * @param {string} jsonString - segments JSON from main STT pass
+ * @param {string} audioPath - local WAV path (already transcoded)
+ * @param {string} language - language hint (e.g. 'auto', 'en-US')
+ * @param {string} jobId - for logging
+ * @param {number} minGapSec - min gap size to trigger retry (default 10s)
+ * @returns {Promise<string>} JSON with recovered segments spliced in
+ */
+async function fillDeadZonesViaRetry(jsonString, audioPath, language, jobId, minGapSec = 10) {
+    try {
+        let cleaned = jsonString.replace(/```json/g, '').replace(/```/g, '').trim();
+        const s = cleaned.indexOf('[');
+        const e = cleaned.lastIndexOf(']');
+        if (s === -1 || e === -1) return jsonString;
+        cleaned = cleaned.substring(s, e + 1).replace(/,\s*([}\]])/g, '$1');
+
+        const segments = JSON.parse(cleaned);
+        if (!Array.isArray(segments) || segments.length < 2) return jsonString;
+
+        segments.sort((a, b) => parseTimestamp(a.start) - parseTimestamp(b.start));
+
+        // Find inter-cue gaps >= minGapSec
+        const gaps = [];
+        for (let i = 0; i < segments.length - 1; i++) {
+            const endA = parseTimestamp(segments[i].end);
+            const startB = parseTimestamp(segments[i + 1].start);
+            const gapSize = startB - endA;
+            if (gapSize >= minGapSec) {
+                gaps.push({ start: endA, end: startB, dur: gapSize });
+            }
+        }
+
+        if (gaps.length === 0) return jsonString;
+
+        log('info', `Found ${gaps.length} dead zones >=${minGapSec}s — retrying chirp_2 on each`,
+            { jobId: jobId.substring(0, 8), gaps: gaps.map(g => `${g.start.toFixed(0)}-${g.end.toFixed(0)}s`).join(',') });
+
+        // Process gaps in parallel
+        const retryPromises = gaps.map(async (gap) => {
+            let localPath = null;
+            let gcsName = null;
+            try {
+                // Small buffer (0.2s) on each side helps catch words right at the boundary
+                const bufferedStart = Math.max(0, gap.start - 0.2);
+                const bufferedDur = gap.dur + 0.4;
+                localPath = await extractWavChunk(audioPath, bufferedStart, bufferedDur);
+                gcsName = `srt-ai/deadzone-${jobId.substring(0, 8)}-${gap.start.toFixed(0)}-${Date.now()}.wav`;
+                await gcsBucket.upload(localPath, {
+                    destination: gcsName,
+                    metadata: { contentType: 'audio/wav' },
+                });
+                const gcsUri = `gs://${GCS_BUCKET_NAME}/${gcsName}`;
+                const words = await getWordTimestampsChirp2(gcsUri, language);
+
+                if (!words || words.length === 0) return null;
+
+                // Offset timestamps to global audio time
+                for (const w of words) {
+                    w.startTime += bufferedStart;
+                    w.endTime += bufferedStart;
+                }
+
+                // Build cues from these words
+                const subJson = buildSegmentsFromSTT(words, 8);
+                const subSegs = JSON.parse(subJson);
+                return Array.isArray(subSegs) && subSegs.length > 0 ? subSegs : null;
+            } catch (err) {
+                log('warn', `Dead-zone retry failed at ${gap.start.toFixed(0)}s`,
+                    { jobId: jobId.substring(0, 8), error: err.message });
+                return null;
+            } finally {
+                if (localPath) try { await fsPromises.unlink(localPath); } catch {}
+                if (gcsName) try { await gcsBucket.file(gcsName).delete(); } catch {}
+            }
+        });
+
+        const results = await Promise.allSettled(retryPromises);
+        const newSegments = [];
+        for (let i = 0; i < results.length; i++) {
+            if (results[i].status === 'fulfilled' && results[i].value) {
+                newSegments.push(...results[i].value);
+                log('info', `Dead zone @${gaps[i].start.toFixed(0)}s: recovered ${results[i].value.length} cues`,
+                    { jobId: jobId.substring(0, 8) });
+            }
+        }
+
+        if (newSegments.length === 0) {
+            log('info', 'Dead-zone retry: no words recovered from any gap', { jobId: jobId.substring(0, 8) });
+            return jsonString;
+        }
+
+        const merged = [...segments, ...newSegments].sort((a, b) =>
+            parseTimestamp(a.start) - parseTimestamp(b.start));
+
+        log('info', `Dead-zone retry complete: ${segments.length} → ${merged.length} cues (+${newSegments.length})`,
+            { jobId: jobId.substring(0, 8) });
+        return JSON.stringify(merged);
+
+    } catch (err) {
+        log('warn', 'fillDeadZonesViaRetry failed', { error: err.message });
+        return jsonString;
+    }
+}
+
 /**
  * Call Google Cloud Speech-to-Text V2 with the 'chirp_2' model.
  * chirp_2 is Google's latest universal speech model (released late 2024) and
@@ -1388,6 +1623,38 @@ function buildSegmentsFromSTT(sttWords, wordLimit = 8) {
     const CLAUSE_END = /[,;:]$/;
     const MIN_WORDS_FOR_SOFT_BREAK = 4;
 
+    // Video-editing standard: target wordLimit words per cue, allow up to +2 if
+    // needed to avoid ending on a weak/incomplete word (so phrases like "far more"
+    // don't get split). Hard caps prevent runaway cues and Premiere wrap-onto-2-lines.
+    const TARGET_WORDS = wordLimit;
+    const MAX_WORDS = wordLimit + 2;        // soft extend up to +2 words (e.g. 10)
+    const MAX_CHARS = 60;                   // single-line in Premiere at standard sizes
+    // Hard caps: only exceeded when a sentence-end is within 1-3 words and
+    // we don't want to orphan it into a tiny next cue.
+    const MAX_WORDS_HARD = wordLimit + 4;   // e.g. 12 — absolute ceiling
+    const MAX_CHARS_HARD = 75;              // 1 line on Premiere at smaller font
+
+    // Words that should NOT end a cue (they expect the next word to complete the
+    // phrase). If we hit TARGET_WORDS but the last word is weak, we keep extending
+    // up to MAX_WORDS / MAX_CHARS.
+    const WEAK_TRAILING = new Set([
+        // articles + prepositions
+        'the', 'a', 'an', 'of', 'in', 'at', 'to', 'on', 'for', 'with', 'by',
+        'from', 'as', 'into', 'onto', 'about', 'over', 'under',
+        // copula / aux
+        'is', 'was', 'are', 'were', 'be', 'been', 'being', 'am', 'has', 'have',
+        'had', 'do', 'does', 'did', 'will', 'would', 'can', 'could', 'should',
+        'may', 'might', 'must', 'shall',
+        // pronouns / possessives
+        'he', 'she', 'it', 'they', 'we', 'you', 'i', 'his', 'her', 'their',
+        'your', 'my', 'our', 'this', 'that', 'these', 'those',
+        // conjunctions / connectives
+        'and', 'but', 'or', 'so', 'if', 'than', 'that', 'because', 'though',
+        // intensifiers that pair with the next word
+        'very', 'too', 'quite', 'just', 'really', 'far', 'more', 'most',
+        'less', 'least', 'much', 'many', 'some', 'any', 'all', 'no', 'not',
+    ]);
+
     // Words that almost always begin a new clause/sentence in English.
     // When STT shows even a short gap before one of these, that's a real break.
     const CLAUSE_STARTERS = new Set([
@@ -1395,6 +1662,25 @@ function buildSegmentsFromSTT(sttWords, wordLimit = 8) {
         'while', 'then', 'though', 'yet', 'still', 'also', 'plus',
         'meanwhile', 'instead', 'otherwise', 'therefore', 'thus',
     ]);
+
+    // Clamp pathologically long word endpoints. latest_long (and occasionally
+    // chirp_2) report word.endTime that includes trailing silence — e.g. "him."
+    // gets endTime 12s after startTime because STT extends the endpoint to the
+    // next speech onset. Cap each word's reported duration to a phonetically
+    // reasonable max based on character length, so a single "yes" cue can't
+    // stretch for 12 seconds in the final SRT.
+    for (let i = 0; i < sttWords.length; i++) {
+        const w = sttWords[i];
+        const charLen = (w.word || '').replace(/[^a-zA-Z0-9']/g, '').length || 1;
+        // 200ms/char + 600ms floor → "yes" caps at 1.2s, "hello" at 1.6s,
+        // "antidisestablishmentarianism" at ~5.6s. Drawn-out vowels can exceed
+        // this slightly but a clipped cue is far better than a 12s "With him."
+        const maxWordDur = Math.max(0.6, charLen * 0.20);
+        const reportedDur = w.endTime - w.startTime;
+        if (reportedDur > maxWordDur) {
+            w.endTime = w.startTime + maxWordDur;
+        }
+    }
 
     // Drop a likely STT artifact at the very start: a tiny word ending with
     // a period followed by a long silence before real speech begins (e.g.
@@ -1442,13 +1728,69 @@ function buildSegmentsFromSTT(sttWords, wordLimit = 8) {
             }
         }
 
+        // PRE-PUSH cap check: if adding this word would exceed hard caps AND we
+        // already have words in the group, flush the existing group first (without
+        // the new word), then start a fresh group with this word.
+        //
+        // EXCEPTION: if a sentence-end (.!?) is within reach in the next 1-3 words,
+        // allow up to MAX_CHARS_HARD / MAX_WORDS_HARD so the complete sentence
+        // lands in one cue. Splitting "another disturbing event at the same horror
+        // house | takes place." is worse than a slightly-over-50-char single cue.
+        if (group.length > 0) {
+            const tentativeText = group.map(g => g.word).join(' ') + ' ' + w.word;
+            const tentativeChars = tentativeText.length;
+            const tentativeWords = group.length + 1;
+            const overSoftCap = tentativeChars > MAX_CHARS || tentativeWords > MAX_WORDS;
+
+            if (overSoftCap) {
+                // Look ahead: does a sentence-end appear within next 3 words?
+                let sentenceWithinReach = false;
+                let projectedChars = tentativeChars;
+                let projectedWords = tentativeWords;
+                if (SENTENCE_END.test(w.word)) {
+                    sentenceWithinReach = true;
+                } else {
+                    for (let look = 1; look <= 3 && (i + look) < words.length; look++) {
+                        const lw = words[i + look];
+                        projectedChars += 1 + lw.word.length;
+                        projectedWords += 1;
+                        if (projectedChars > MAX_CHARS_HARD || projectedWords > MAX_WORDS_HARD) break;
+                        if (SENTENCE_END.test(lw.word)) {
+                            sentenceWithinReach = true;
+                            break;
+                        }
+                    }
+                }
+
+                const withinHardCaps = tentativeChars <= MAX_CHARS_HARD && tentativeWords <= MAX_WORDS_HARD;
+                if (!(sentenceWithinReach && withinHardCaps)) {
+                    flush();
+                }
+                // else: defer flush; the sentence-end will flush on a later iteration.
+            }
+        }
+
         group.push(w);
 
+        const cueText = group.map(g => g.word).join(' ');
+        const cueChars = cueText.length;
+
         const naturalPause = next && (next.startTime - w.endTime) >= PAUSE_THRESHOLD;
-        const hitLimit = group.length >= wordLimit;
+        const hitTarget = group.length >= TARGET_WORDS;
+        // Iteration-level caps use HARD values — soft caps (MAX_WORDS/MAX_CHARS)
+        // are enforced by the PRE-PUSH check, which allows extending past them when
+        // a sentence-end is within reach. Using soft caps here would override that
+        // bypass and chop sentences mid-flight.
+        const hitMaxWords = group.length >= MAX_WORDS_HARD;
+        const hitMaxChars = cueChars >= MAX_CHARS_HARD;
         const isLast = !next;
         const sentenceEnd = SENTENCE_END.test(w.word);
         const clauseEnd = CLAUSE_END.test(w.word) && group.length >= MIN_WORDS_FOR_SOFT_BREAK;
+
+        // Is the current last word "weak" (article/prep/aux/intensifier)?
+        // If yes, flushing here would orphan an incomplete phrase.
+        const lastClean = w.word.toLowerCase().replace(/[^a-z']/g, '');
+        const endsOnWeak = WEAK_TRAILING.has(lastClean);
 
         // Always flush after sentence-ending punctuation — never carry a
         // sentence across a subtitle break.
@@ -1457,30 +1799,152 @@ function buildSegmentsFromSTT(sttWords, wordLimit = 8) {
             continue;
         }
 
-        if (isLast || naturalPause || hitLimit || clauseEnd) {
-            // If we hit the hard word limit without any natural break point,
-            // back up to the last punctuation in the final 3 words to avoid
-            // chopping mid-phrase.
-            if (hitLimit && !naturalPause && !isLast && !clauseEnd) {
-                let breakAt = -1;
-                for (let k = group.length - 1; k >= Math.max(0, group.length - 3); k--) {
-                    if (/[,;.!?]$/.test(group[k].word)) {
-                        breakAt = k;
+        // Hard caps: always flush regardless of weak-trailing rule.
+        if (isLast || hitMaxWords || hitMaxChars) {
+            flush();
+            continue;
+        }
+
+        // Natural break points: pause or clause-end punctuation.
+        // EXCEPTION: if a sentence-end (.!?) is within reach in next 1-3 words
+        // AND we'd stay within hard caps, defer the flush so the complete
+        // sentence lands in one cue even if the speaker breathed mid-sentence.
+        if (naturalPause || clauseEnd) {
+            const headroom = MAX_WORDS_HARD - group.length;
+            let sentenceWithinReach = false;
+            if (headroom > 0) {
+                let projectedChars = cueChars;
+                for (let look = 1; look <= headroom && (i + look) < words.length; look++) {
+                    const lw = words[i + look];
+                    projectedChars += 1 + lw.word.length;
+                    if (projectedChars > MAX_CHARS_HARD) break;
+                    if (SENTENCE_END.test(lw.word)) {
+                        sentenceWithinReach = true;
                         break;
                     }
                 }
-                if (breakAt !== -1 && breakAt < group.length - 1) {
-                    const keep = group.splice(breakAt + 1);
-                    flush(group[group.length - 1].endTime);
-                    group = keep;
-                    continue;
+            }
+            if (!sentenceWithinReach) {
+                flush();
+                continue;
+            }
+            // else: sentence completes within reach — defer the pause-flush.
+        }
+
+        // Target-hit: flush only if NOT ending on a weak word.
+        // If ending on weak, keep extending until MAX or non-weak word.
+        if (hitTarget && !endsOnWeak) {
+            // SENTENCE-COMPLETION LOOK-AHEAD: before flushing at target,
+            // peek forward up to (MAX_WORDS - group.length) words. If a
+            // sentence-ender (.!?) is within reach AND the projected char
+            // count stays under MAX_CHARS, keep extending so the complete
+            // sentence lives in one cue.
+            //
+            // This prevents splits like:
+            //   ❌ "another disturbing event at the same horror house"  (8w, target hit)
+            //   ❌ "takes place."                                       (2w, orphan)
+            // And produces instead:
+            //   ✅ "another disturbing event at the same horror house takes place."  (10w, complete)
+            // Look-ahead uses HARD caps so a single complete sentence isn't
+            // chopped just because it pushes 1-2 chars over MAX_CHARS soft cap.
+            const headroom = MAX_WORDS_HARD - group.length;
+            let sentenceWithinReach = false;
+            if (headroom > 0) {
+                let projectedChars = cueChars;
+                for (let look = 1; look <= headroom && (i + look) < words.length; look++) {
+                    const lw = words[i + look];
+                    projectedChars += 1 + lw.word.length;
+                    if (projectedChars > MAX_CHARS_HARD) break;
+                    if (SENTENCE_END.test(lw.word)) {
+                        sentenceWithinReach = true;
+                        break;
+                    }
                 }
             }
-            flush();
+            if (!sentenceWithinReach) {
+                flush();
+            }
+            // else: keep building; sentence-end will trigger flush on later iteration
         }
     }
 
     return JSON.stringify(segments);
+}
+
+/**
+ * Fill gaps in Gemini-aligned output using chirp_2 word timestamps.
+ *
+ * alignJsonTimestamps only fixes timestamps — it can't add cues for speech
+ * that Gemini missed in its text output. This function scans the merged
+ * output for inter-cue gaps > minGapSec, looks up any STT words in those
+ * gaps, and inserts them as new cues built by buildSegmentsFromSTT.
+ *
+ * Without this, mid-sentence drops (verified at 5:28, 12:51 in voice.mp3)
+ * stay missing in the final SRT even though chirp_2 caught the words.
+ *
+ * @param {string} jsonString - aligned JSON segments from alignJsonTimestamps
+ * @param {Array<{word,startTime,endTime}>} sttWords - chirp_2 word list
+ * @param {number} minGapSec - minimum gap size to fill (default 3.0s)
+ * @param {number} wordLimit - words per inserted cue
+ * @returns {string} JSON with gap-fill segments inserted
+ */
+function fillSttGaps(jsonString, sttWords, minGapSec = 3.0, wordLimit = 8) {
+    if (!sttWords || sttWords.length === 0) return jsonString;
+    try {
+        let cleaned = jsonString.replace(/```json/g, '').replace(/```/g, '').trim();
+        const s = cleaned.indexOf('[');
+        const e = cleaned.lastIndexOf(']');
+        if (s === -1 || e === -1) return jsonString;
+        cleaned = cleaned.substring(s, e + 1).replace(/,\s*([}\]])/g, '$1');
+
+        const segments = JSON.parse(cleaned);
+        if (!Array.isArray(segments) || segments.length === 0) return jsonString;
+
+        // Sort segments by start time
+        segments.sort((a, b) => parseTimestamp(a.start) - parseTimestamp(b.start));
+
+        const result = [];
+        let prevEnd = 0;
+        let totalInserted = 0;
+
+        for (let i = 0; i <= segments.length; i++) {
+            const cur = segments[i];
+            const curStart = cur ? parseTimestamp(cur.start) : Infinity;
+            const gap = curStart - prevEnd;
+
+            if (gap >= minGapSec) {
+                // Find STT words in this gap (with small buffer to avoid stealing edge words)
+                const wordsInGap = sttWords.filter(w =>
+                    w.startTime >= prevEnd + 0.05 &&
+                    w.endTime <= curStart - 0.05
+                );
+
+                if (wordsInGap.length > 0) {
+                    const fillJson = buildSegmentsFromSTT(wordsInGap, wordLimit);
+                    try {
+                        const fillSegs = JSON.parse(fillJson);
+                        if (Array.isArray(fillSegs) && fillSegs.length > 0) {
+                            result.push(...fillSegs);
+                            totalInserted += fillSegs.length;
+                        }
+                    } catch { /* skip malformed fill */ }
+                }
+            }
+
+            if (cur) {
+                result.push(cur);
+                prevEnd = parseTimestamp(cur.end);
+            }
+        }
+
+        if (totalInserted > 0) {
+            log('info', `STT gap-fill: inserted ${totalInserted} cues into ${segments.length}-segment alignment`);
+        }
+        return JSON.stringify(result);
+    } catch (err) {
+        log('warn', '[fillSttGaps] failed, keeping aligned output as-is', { error: err.message });
+        return jsonString;
+    }
 }
 
 /**
@@ -2026,6 +2490,114 @@ function formatTimestamp(seconds) {
 //   POST-PROCESSING PIPELINE (Fix AI timestamp mistakes)
 // ═══════════════════════════════════════════════════════════
 
+/**
+ * Pre-filter pass: drop garbage and duplicate cues before timing fixes.
+ *
+ * Catches three pathologies observed in chirp_2 output:
+ *   1. Duplicate-start segments — when chirp_2 emits both a short and long
+ *      version of the same utterance at the same timestamp. Keep the longer.
+ *   2. Repeated-token garbage — cues whose text is just one token repeated
+ *      ("0 0 0 0 0 0 0 0"). chirp_2 emits these on phone-dial tones, beeps,
+ *      or distorted non-speech audio.
+ *   3. Empty/whitespace text.
+ */
+function dedupAndFilterSegments(segments) {
+    if (!segments || segments.length === 0) return [];
+
+    // 1. Drop empty + repeated-token garbage
+    const filtered = segments.filter(seg => {
+        const text = (seg.text || '').trim();
+        if (!text) return false;
+        const tokens = text.split(/\s+/);
+        // If 3+ tokens and all the same (case-insensitive, ignoring punctuation),
+        // treat as STT garbage on non-speech audio.
+        if (tokens.length >= 3) {
+            const norm = tokens.map(t => t.toLowerCase().replace(/[^a-z0-9]/g, ''));
+            const allSame = norm.every(t => t === norm[0]);
+            if (allSame) {
+                log('debug', `dedupAndFilter: dropping repeated-token garbage cue "${text}"`);
+                return false;
+            }
+        }
+        return true;
+    });
+
+    // 2. Sort by start time, then by text length DESC so longer text wins dedup
+    filtered.sort((a, b) => {
+        const sa = parseTimestamp(a.start);
+        const sb = parseTimestamp(b.start);
+        if (sa !== sb) return sa - sb;
+        return (b.text?.length || 0) - (a.text?.length || 0);
+    });
+
+    // 3. Drop duplicate-start segments: when two cues start within 100ms,
+    //    keep the longer-text one. Common when chirp_2 emits prefix duplicates
+    //    (e.g., "Right" + "Right. Would you say...").
+    const result = [];
+    for (let i = 0; i < filtered.length; i++) {
+        const cur = filtered[i];
+        const curStart = parseTimestamp(cur.start);
+
+        // If previous result starts within 100ms and is a strict prefix of
+        // current text, replace previous. Otherwise just append.
+        if (result.length > 0) {
+            const prev = result[result.length - 1];
+            const prevStart = parseTimestamp(prev.start);
+            if (Math.abs(curStart - prevStart) < 0.1) {
+                // Same-start duplicate. Keep whichever has more text.
+                if ((cur.text?.length || 0) > (prev.text?.length || 0)) {
+                    log('debug', `dedupAndFilter: replacing duplicate-start "${prev.text}" with "${cur.text}"`);
+                    result[result.length - 1] = cur;
+                } else {
+                    log('debug', `dedupAndFilter: dropping duplicate-start "${cur.text}"`);
+                }
+                continue;
+            }
+        }
+        result.push(cur);
+    }
+
+    if (filtered.length !== segments.length || result.length !== filtered.length) {
+        log('info', `dedupAndFilter: ${segments.length} → ${result.length} cues (dropped ${segments.length - result.length})`);
+    }
+    return result;
+}
+
+/**
+ * Enforce a minimum cue display duration so single-word/filler cues
+ * (chirp_2 acoustic endpoints of ~40-120ms) extend long enough to read.
+ * Never extends into the next cue's start — preserves non-overlap.
+ *
+ * @param {number} minMs - target minimum cue duration (e.g., 700ms)
+ */
+function enforceMinDisplayDuration(segments, minMs = 700) {
+    if (!segments || segments.length === 0) return segments;
+    const minSec = minMs / 1000;
+    const result = [];
+    for (let i = 0; i < segments.length; i++) {
+        const seg = { ...segments[i] };
+        const startSec = parseTimestamp(seg.start);
+        const endSec = parseTimestamp(seg.end);
+        const curDur = endSec - startSec;
+
+        if (curDur < minSec && i < segments.length - 1) {
+            const nextStart = parseTimestamp(segments[i + 1].start);
+            // Extend up to minSec or just before next cue, whichever is smaller.
+            // 50ms safety buffer so we never collide with the next cue's start.
+            const maxAllowedEnd = nextStart - 0.05;
+            const targetEnd = Math.min(startSec + minSec, maxAllowedEnd);
+            if (targetEnd > endSec) {
+                seg.end = formatTimestamp(targetEnd);
+            }
+        } else if (curDur < minSec && i === segments.length - 1) {
+            // Last cue: safe to extend to full minSec
+            seg.end = formatTimestamp(startSec + minSec);
+        }
+        result.push(seg);
+    }
+    return result;
+}
+
 // Fix overlapping timestamps — trims end times (preserves AI start times)
 function compactOverlaps(segments, minDurationMs = 300) {
     if (!segments || segments.length === 0) return [];
@@ -2249,8 +2821,13 @@ function jsonToSrt(jsonString, wordLimit, audioDurationSec = null) {
         let finalSegments = [];
         let segmentIndex = 1;
 
-        const maxWords = 12;
-        const maxChars = 50;
+        // These caps must mirror buildSegmentsFromSTT's HARD caps so the post-processor
+        // doesn't re-split cues that the upstream segmenter just carefully kept whole.
+        // Previously: maxWords=12 / maxChars=50, which chopped 67-char complete-sentence
+        // cues like "Finally, the court decides that the trial will begin in August 2024."
+        // back into two pieces.
+        const maxWords = (parseInt(wordLimit) || 8) + 4;   // matches MAX_WORDS_HARD
+        const maxChars = 75;                                // matches MAX_CHARS_HARD
 
         // STEP 1: Parse, validate timestamps, and smart-split long segments
         segments.forEach((seg) => {
@@ -2306,6 +2883,10 @@ function jsonToSrt(jsonString, wordLimit, audioDurationSec = null) {
             }
         });
 
+        // STEP 1.5: Drop chirp_2 pathologies — duplicate-start prefix cues and
+        // repeated-token garbage (e.g., "0 0 0 0 0 0 0 0" on non-speech audio).
+        finalSegments = dedupAndFilterSegments(finalSegments);
+
         // STEP 2: Fix overlapping timestamps FIRST so adjacent cues are non-overlapping
         // before merging. (Whisper word boundaries often overlap by 1-50ms; if we
         // merge first, mergeCloseSegments skips them because gap<0, and overlap
@@ -2316,7 +2897,13 @@ function jsonToSrt(jsonString, wordLimit, audioDurationSec = null) {
         finalSegments = mergeCloseSegments(finalSegments, 150, maxWords, maxChars);
 
         // STEP 4: Bridge tiny gaps (< 250ms) for visual continuity
-        const bridgedSegments = bridgeGaps(finalSegments, 250);
+        let bridgedSegments = bridgeGaps(finalSegments, 250);
+
+        // STEP 5: Enforce minimum 700ms cue duration for readability —
+        // chirp_2's acoustic word endpoints can be 40-120ms long, which flashes
+        // on screen too briefly to read. Extends up to next cue's start (never
+        // overlaps). Most impactful UX fix on STT-driven output.
+        bridgedSegments = enforceMinDisplayDuration(bridgedSegments, 700);
 
         // Re-index after all processing
         bridgedSegments.forEach((seg, idx) => {
