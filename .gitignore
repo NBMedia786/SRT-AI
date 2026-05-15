@@ -57,3 +57,6 @@ voice_output_verification.*
 # Working folders — local audio + generated SRTs
 input/
 output/
+
+# Local debug helpers
+_transcribe_check.mjs

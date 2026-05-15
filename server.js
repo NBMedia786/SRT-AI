@@ -15,6 +15,7 @@ import { execSync } from 'child_process';
 // --- SDK IMPORTS ---
 import { GoogleGenAI } from '@google/genai';
 import { HfInference } from '@huggingface/inference';
+import { separateVocals, isSourceSeparationAvailable } from './source_separation.js';
 import { Storage } from '@google-cloud/storage';
 import speech from '@google-cloud/speech';
 
@@ -419,6 +420,7 @@ app.post('/api/transcribe', upload.single('file'), async (req, res) => {
     const startTime = Date.now();
     const cleanupPaths = [];
     let geminiFileName = null;
+    let separationWorkDir = null;
 
     try {
         // 1. Rate Limiting
@@ -488,6 +490,43 @@ app.post('/api/transcribe', upload.single('file'), async (req, res) => {
 
         // NOTE: FFmpeg speech-boundary alignment was tested but removed —
         // it worsened timestamps on audio with background music/ambient sound.
+
+        // -------------------------------------------------------
+        // STEP 1.5: OPTIONAL source separation (Demucs)
+        // Multi-speaker / narrator-over-bodycam / music-with-vocals audio
+        // confuses single-stream transcription. Isolating the vocals track
+        // upfront gives STT and Gemini a clean signal and dramatically tightens
+        // timestamps on overlay content.
+        //
+        // Enable via ENABLE_SOURCE_SEPARATION=true in .env. Requires demucs:
+        //   python3 -m pip install --user demucs
+        // -------------------------------------------------------
+        if (process.env.ENABLE_SOURCE_SEPARATION === 'true') {
+            try {
+                updateProgress(jobId, 'separating', 42, 'Isolating vocals from background…');
+                log('info', 'Source separation enabled — running Demucs', { jobId: jobId.substring(0, 8) });
+                const sep = await separateVocals(audioPath, (stage) => {
+                    if (stage && stage.length < 120) {
+                        updateProgress(jobId, 'separating', 43, `Demucs: ${stage}`);
+                    }
+                });
+                // Replace audioPath with the isolated vocals — all downstream stages
+                // (GCS upload, STT, Gemini) now see a clean narrator track.
+                audioPath = sep.vocals;
+                separationWorkDir = sep.workDir;
+                cleanupPaths.push(sep.vocals, sep.noVocals);
+                log('info', 'Source separation done — using isolated vocals track', {
+                    jobId: jobId.substring(0, 8),
+                    vocalsPath: sep.vocals,
+                });
+            } catch (sepErr) {
+                // Don't fail the job — fall back to original audio if separation breaks
+                log('warn', 'Source separation failed, continuing with original audio', {
+                    jobId: jobId.substring(0, 8),
+                    error: sepErr.message,
+                });
+            }
+        }
 
         // -------------------------------------------------------
         // STEP 2: Upload audio to GCS bucket
@@ -716,6 +755,11 @@ app.post('/api/transcribe', upload.single('file'), async (req, res) => {
         // Cleanup
         for (const p of cleanupPaths) {
             await deleteLocalFile(p);
+        }
+        // Cleanup Demucs work dir (vocals.wav + no_vocals.wav are inside it)
+        if (separationWorkDir) {
+            try { await fsPromises.rm(separationWorkDir, { recursive: true, force: true }); }
+            catch (e) { log('warn', 'Failed to remove separation workdir', { dir: separationWorkDir, error: e.message }); }
         }
 
         // Cleanup GCS file
@@ -1970,91 +2014,163 @@ function alignJsonTimestamps(jsonString, sttWords) {
 
         const norm = (w) => w.toLowerCase().replace(/[^a-z0-9']/g, '');
 
-        let ptr = 0; // sequential pointer into sttWords
+        // ─── Step 1: Build flat Gemini-word list, tagged with originating segment ───
+        // Each entry: { text, segIdx, posInSeg, posInDoc }
+        const aiWords = [];
+        segments.forEach((seg, segIdx) => {
+            const tokens = (seg.text || '').replace(/[^a-zA-Z0-9'\s]/g, '').split(/\s+/).filter(Boolean);
+            tokens.forEach((tok, posInSeg) => {
+                aiWords.push({ text: norm(tok), segIdx, posInSeg, posInDoc: aiWords.length });
+            });
+        });
+        if (aiWords.length === 0 || sttWords.length === 0) return jsonString;
 
-        for (const seg of segments) {
-            const segWords = seg.text.replace(/[^a-zA-Z0-9'\s]/g, '').split(/\s+/).filter(w => w);
-            if (segWords.length === 0 || ptr >= sttWords.length) continue;
+        // ─── Step 2: Build STT word index for O(1) lookups: word → [sttIdx, …] ───
+        const sttIndex = new Map();
+        for (let i = 0; i < sttWords.length; i++) {
+            const w = norm(sttWords[i].word);
+            if (!w) continue;
+            if (!sttIndex.has(w)) sttIndex.set(w, []);
+            sttIndex.get(w).push(i);
+        }
 
-            // Use AI timestamp as a hint: bias the search window to start near where
-            // the AI says this segment begins, not just at ptr.
-            const aiStartSec = parseTimestamp(seg.start);
-            let biasPtr = ptr;
-            for (let i = ptr; i < sttWords.length; i++) {
-                if (sttWords[i].startTime >= aiStartSec - 3) {
-                    biasPtr = Math.max(ptr, i - 8); // look 8 words before expected position
-                    break;
+        // ─── Step 3: Anchor pass — for each Gemini word, find best STT match ───
+        // Strategy: bigram match preferred (current + next word both match), unigram fallback.
+        // Search is constrained to a sliding window around the previously-matched STT index
+        // so we stay monotonic and don't re-match an early "the" for a late "the".
+        // Crucially: STT may have transcribed a *different* speaker than Gemini (narrator
+        // vs. body-cam). When that's the case for a given word, we simply skip it — the
+        // segment gets timestamps interpolated from anchors in its neighbours.
+        const anchors = []; // [{ aiIdx, sttIdx, score }]  score: 2=bigram, 1=unigram
+        let lastSttIdx = 0;          // monotonic floor — anchors only go forward
+        const WIN_BACK = 30;         // allow some backtrack for missed words
+        const WIN_FWD  = 200;        // forward search window (200 STT words ≈ ~1 min audio)
+
+        for (let ai = 0; ai < aiWords.length; ai++) {
+            const target = aiWords[ai].text;
+            const nextTarget = aiWords[ai + 1]?.text;
+            const candidates = sttIndex.get(target);
+            if (!candidates || candidates.length === 0) continue;
+
+            // Find candidate STT indices within the search window
+            const lo = Math.max(0, lastSttIdx - WIN_BACK);
+            const hi = Math.min(sttWords.length, lastSttIdx + WIN_FWD);
+
+            let bestSttIdx = -1;
+            let bestScore = 0;
+            for (const cand of candidates) {
+                if (cand < lo || cand >= hi) continue;
+                // Score: bigram match preferred. Closer-to-lastSttIdx as tiebreaker.
+                let score = 1;
+                if (nextTarget && cand + 1 < sttWords.length && norm(sttWords[cand + 1].word) === nextTarget) {
+                    score = 2;
+                }
+                if (score > bestScore || (score === bestScore && bestSttIdx !== -1 && cand < bestSttIdx)) {
+                    bestScore = score;
+                    bestSttIdx = cand;
                 }
             }
 
-            const windowEnd = Math.min(biasPtr + 80, sttWords.length);
+            if (bestSttIdx !== -1) {
+                anchors.push({ aiIdx: ai, sttIdx: bestSttIdx, score: bestScore });
+                lastSttIdx = bestSttIdx + 1;
+            }
+        }
 
-            // Strategy 1: Find first word with 2-word anchor verification (avoids false positives)
-            let foundStart = -1;
-            for (let i = biasPtr; i < windowEnd; i++) {
-                if (norm(sttWords[i].word) === norm(segWords[0])) {
-                    if (segWords.length > 1 && i + 1 < sttWords.length) {
-                        if (norm(sttWords[i + 1].word) === norm(segWords[1])) {
-                            foundStart = i;
-                            break;
-                        }
-                        // 2-word anchor failed — keep searching; don't lock on common single word yet
+        if (anchors.length === 0) {
+            // No alignment possible — keep AI timestamps as-is
+            return jsonString;
+        }
+
+        // ─── Step 4: For each segment, derive start/end from anchors ───
+        // Find anchors whose aiIdx falls inside the segment's Gemini-word range.
+        // If 1+ anchors inside: use first/last anchor times directly.
+        // If 0 anchors: interpolate from nearest before/after anchors (preserves monotonicity).
+        // Build per-segment Gemini-word index ranges for quick anchor filtering
+        const segRange = segments.map(() => ({ firstAiIdx: -1, lastAiIdx: -1 }));
+        for (const w of aiWords) {
+            const r = segRange[w.segIdx];
+            if (r.firstAiIdx === -1) r.firstAiIdx = w.posInDoc;
+            r.lastAiIdx = w.posInDoc;
+        }
+
+        // Binary helpers to find nearest anchor before/after a given aiIdx
+        const findAnchorIn = (firstAi, lastAi) => {
+            // anchors sorted by aiIdx ascending (built that way)
+            const inside = anchors.filter(a => a.aiIdx >= firstAi && a.aiIdx <= lastAi);
+            return inside;
+        };
+        const findAnchorBefore = (aiIdx) => {
+            for (let i = anchors.length - 1; i >= 0; i--) if (anchors[i].aiIdx < aiIdx) return anchors[i];
+            return null;
+        };
+        const findAnchorAfter = (aiIdx) => {
+            for (let i = 0; i < anchors.length; i++) if (anchors[i].aiIdx > aiIdx) return anchors[i];
+            return null;
+        };
+
+        let lastSegEndSec = 0;
+        for (let si = 0; si < segments.length; si++) {
+            const seg = segments[si];
+            const { firstAiIdx, lastAiIdx } = segRange[si];
+            if (firstAiIdx === -1) continue; // empty text
+
+            const inSeg = findAnchorIn(firstAiIdx, lastAiIdx);
+
+            let startSec, endSec;
+            if (inSeg.length > 0) {
+                // Use first/last anchored words' STT times
+                const firstAnc = inSeg[0];
+                const lastAnc = inSeg[inSeg.length - 1];
+                startSec = sttWords[firstAnc.sttIdx].startTime;
+                endSec = sttWords[lastAnc.sttIdx].endTime;
+                // If only 1 anchor and it's not at the segment's first word, the first
+                // word started slightly earlier — back off by (anchor-pos × 0.25s per word)
+                if (inSeg.length === 1) {
+                    const wordsBeforeAnchor = firstAnc.aiIdx - firstAiIdx;
+                    if (wordsBeforeAnchor > 0) startSec = Math.max(lastSegEndSec, startSec - wordsBeforeAnchor * 0.25);
+                    const wordsAfterAnchor = lastAiIdx - lastAnc.aiIdx;
+                    if (wordsAfterAnchor > 0) endSec = endSec + wordsAfterAnchor * 0.25;
+                }
+            } else {
+                // No anchors in this segment — interpolate between neighbors
+                const before = findAnchorBefore(firstAiIdx);
+                const after = findAnchorAfter(lastAiIdx);
+                if (before && after) {
+                    // Linear interpolate by Gemini-word position
+                    const tBefore = sttWords[before.sttIdx].endTime;
+                    const tAfter = sttWords[after.sttIdx].startTime;
+                    const aiSpan = after.aiIdx - before.aiIdx;
+                    if (aiSpan > 0) {
+                        const ratio1 = (firstAiIdx - before.aiIdx) / aiSpan;
+                        const ratio2 = (lastAiIdx - before.aiIdx) / aiSpan;
+                        startSec = tBefore + (tAfter - tBefore) * ratio1;
+                        endSec = tBefore + (tAfter - tBefore) * ratio2;
                     } else {
-                        foundStart = i; // single-word segment, no choice
-                        break;
+                        startSec = tBefore;
+                        endSec = tAfter;
                     }
-                }
-            }
-
-            // Strategy 2: First word without anchor verification (if anchored search failed)
-            if (foundStart === -1) {
-                for (let i = biasPtr; i < windowEnd; i++) {
-                    if (norm(sttWords[i].word) === norm(segWords[0])) {
-                        foundStart = i;
-                        break;
-                    }
-                }
-            }
-
-            // Strategy 3: Use 2nd word as anchor when first word is missing from STT
-            if (foundStart === -1 && segWords.length > 1) {
-                for (let i = biasPtr; i < windowEnd; i++) {
-                    if (norm(sttWords[i].word) === norm(segWords[1])) {
-                        foundStart = Math.max(ptr, i - 1);
-                        break;
-                    }
-                }
-            }
-
-            if (foundStart === -1) {
-                // Advance ptr to AI timestamp position so future segments aren't affected
-                // by a stale ptr pointing to an already-passed audio region.
-                while (ptr < sttWords.length && sttWords[ptr].startTime < aiStartSec) ptr++;
-                continue; // keep AI timestamp for this segment
-            }
-
-            // Walk forward through segment words to find the last matching word
-            let foundEnd = foundStart;
-            let sttIdx = foundStart;
-            for (let si = 0; si < segWords.length; si++) {
-                if (sttIdx >= sttWords.length) break;
-                if (norm(sttWords[sttIdx].word) === norm(segWords[si])) {
-                    foundEnd = sttIdx;
-                    sttIdx++;
+                } else if (before) {
+                    // Extrapolate forward from last known anchor — add ~0.3s per word
+                    startSec = sttWords[before.sttIdx].endTime + (firstAiIdx - before.aiIdx) * 0.3;
+                    endSec = startSec + (lastAiIdx - firstAiIdx + 1) * 0.3;
+                } else if (after) {
+                    // Extrapolate backward from first anchor
+                    endSec = sttWords[after.sttIdx].startTime - (after.aiIdx - lastAiIdx) * 0.3;
+                    startSec = endSec - (lastAiIdx - firstAiIdx + 1) * 0.3;
                 } else {
-                    // STT inserted an extra word — skip it and retry current AI word
-                    if (sttIdx + 1 < sttWords.length && norm(sttWords[sttIdx + 1].word) === norm(segWords[si])) {
-                        sttIdx++;
-                        foundEnd = sttIdx;
-                        sttIdx++;
-                    }
-                    // If no match either way, AI word was deleted from STT — just advance si (for loop)
+                    // No anchors at all — keep AI timestamps
+                    continue;
                 }
             }
 
-            seg.start = formatTimestamp(sttWords[foundStart].startTime);
-            seg.end = formatTimestamp(sttWords[foundEnd].endTime);
-            ptr = foundEnd + 1;
+            // Enforce monotonicity: never go backward from previous segment's end
+            if (startSec < lastSegEndSec) startSec = lastSegEndSec;
+            if (endSec <= startSec) endSec = startSec + 0.5;
+
+            seg.start = formatTimestamp(startSec);
+            seg.end = formatTimestamp(endSec);
+            lastSegEndSec = endSec;
         }
 
         return JSON.stringify(segments);
@@ -3034,7 +3150,7 @@ process.on('unhandledRejection', (reason, promise) => {
     log('error', 'Unhandled rejection', { reason, promise });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     log('info', '══════════════════════════════════════════');
     log('info', `🎬 SRT-AI Server v2.0.0 (Production Ready)`);
     log('info', `📍 URL:   http://localhost:${PORT}`);
@@ -3043,6 +3159,21 @@ app.listen(PORT, () => {
     log('info', `⏱️  Timeout: ${REQUEST_TIMEOUT_MS / 1000}s`);
     log('info', `📊 Rate Limit: ${RATE_LIMIT_REQUESTS} req/hour`);
     log('info', `📝 Log Level: ${LOG_LEVEL}`);
+
+    // Capability probe: source separation (Demucs)
+    if (process.env.ENABLE_SOURCE_SEPARATION === 'true') {
+        const ok = await isSourceSeparationAvailable();
+        if (ok) {
+            log('info', `🔊 Source separation: enabled (Demucs ready)`);
+        } else {
+            log('warn', `🔊 Source separation: enabled in env but Demucs NOT installed.`);
+            log('warn', `   Install with: python3 -m pip install --user demucs`);
+            log('warn', `   Pipeline will fall back to original audio per request.`);
+        }
+    } else {
+        log('info', `🔊 Source separation: disabled (set ENABLE_SOURCE_SEPARATION=true to enable)`);
+    }
+
     log('info', '══════════════════════════════════════════');
 });
 

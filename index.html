@@ -1398,7 +1398,28 @@
                                         <span id="stat-duration" class="font-mono">0:00</span>
                                     </div>
                                 </div>
-                                <button id="copy-btn"
+                                <div class="flex items-center gap-2">
+                                    <!-- Timing offset control: shift all SRT timestamps by ±N seconds -->
+                                    <div id="offset-control"
+                                        class="hidden md:flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                                        <span class="font-medium">Shift</span>
+                                        <button id="offset-down"
+                                            title="Subtract 0.5s"
+                                            class="w-6 h-6 rounded-md border border-slate-200 dark:border-dark-border hover:bg-primary-50 dark:hover:bg-primary-500/10 hover:border-primary-300 dark:hover:border-primary-500/40 hover:text-primary-600 dark:hover:text-primary-400 flex items-center justify-center font-bold transition-all">−</button>
+                                        <span id="offset-value"
+                                            class="min-w-[44px] text-center font-mono font-bold text-primary-600 dark:text-primary-400 tabular-nums">0.0s</span>
+                                        <button id="offset-up"
+                                            title="Add 0.5s"
+                                            class="w-6 h-6 rounded-md border border-slate-200 dark:border-dark-border hover:bg-primary-50 dark:hover:bg-primary-500/10 hover:border-primary-300 dark:hover:border-primary-500/40 hover:text-primary-600 dark:hover:text-primary-400 flex items-center justify-center font-bold transition-all">+</button>
+                                        <button id="offset-reset"
+                                            title="Reset shift to 0"
+                                            class="hidden w-6 h-6 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 flex items-center justify-center transition-all">
+                                            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <button id="copy-btn"
                                     class="group text-sm font-semibold text-primary-600 dark:text-primary-400 hover:text-primary-700 flex items-center gap-2 px-3 py-1.5 rounded-lg border border-transparent hover:border-primary-200 dark:hover:border-primary-500/30 hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-all">
                                     <svg id="copy-icon" class="w-4 h-4" fill="none" viewBox="0 0 24 24"
                                         stroke="currentColor" stroke-width="2">
@@ -1411,6 +1432,7 @@
                                     </svg>
                                     <span id="copy-label">Copy</span>
                                 </button>
+                                </div>
                             </div>
 
                             <!-- Lyrics Sync View -->
@@ -1482,7 +1504,7 @@
         }
 
         // State
-        const state = { file: null, srt: '', timingReport: '', filename: 'subtitles', lastError: null, audioUrl: null, audioFile: null };
+        const state = { file: null, srt: '', timingReport: '', filename: 'subtitles', lastError: null, audioUrl: null, audioFile: null, timeOffset: 0 };
         const api = window.location.origin;
         let sse = null, timer = null, start = null;
         let segments = [], currentLyricIdx = -1, isLyricsView = true;
@@ -1527,6 +1549,8 @@
             copyBtn: $('copy-btn'), editor: $('editor'),
             copyIcon: $('copy-icon'), copyCheck: $('copy-check'), copyLabel: $('copy-label'),
             statCount: $('stat-count'), statDuration: $('stat-duration'),
+            offsetControl: $('offset-control'), offsetValue: $('offset-value'),
+            offsetUp: $('offset-up'), offsetDown: $('offset-down'), offsetReset: $('offset-reset'),
             // Audio player
             audioPlayerCard: $('audio-player-card'), audioEl: $('audio-el'),
             playPauseBtn: $('play-pause-btn'), playIcon: $('play-icon'), pauseIcon: $('pause-icon'),
@@ -1661,7 +1685,12 @@
             showPlayIcon();
 
             state.file = null; state.srt = ''; state.timingReport = ''; state.audioUrl = null; state.audioFile = null;
+            state.timeOffset = 0;
             segments = []; currentLyricIdx = -1;
+            if (el.offsetControl) {
+                el.offsetControl.classList.add('hidden');
+                el.offsetControl.classList.remove('md:flex');
+            }
 
             el.fileInput.value = '';
             el.fileCard.classList.add('hidden');
@@ -2060,18 +2089,23 @@
                 const div = document.createElement('div');
                 div.className = 'lyric-line';
                 div.dataset.idx = i;
-                div.innerHTML = `<span class="lyric-ts">${formatLyricTs(seg.startTime)}</span><p class="lyric-text leading-relaxed">${seg.text}</p>`;
-                div.addEventListener('click', () => seekToLyric(seg.startSec));
+                div.innerHTML = `<span class="lyric-ts">${formatLyricTs(seg.startTime, state.timeOffset)}</span><p class="lyric-text leading-relaxed">${seg.text}</p>`;
+                // Seek to the SHIFTED time so click-to-play matches what the user sees
+                div.addEventListener('click', () => seekToLyric(seg.startSec + state.timeOffset));
                 list.appendChild(div);
             });
         }
 
         // Convert "HH:MM:SS,mmm" → "MM:SS" (minutes overflow when >59min for long files)
-        function formatLyricTs(ts) {
+        // Optional offsetSec lets callers preview a time-shifted timestamp without mutating segments.
+        function formatLyricTs(ts, offsetSec = 0) {
             const m = String(ts).match(/^(\d{1,3}):(\d{2}):(\d{2})[,.](\d{1,3})/);
             if (!m) return ts;
-            const totalMin = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
-            return `${String(totalMin).padStart(2, '0')}:${m[3]}`;
+            let totalSec = parseInt(m[1], 10) * 3600 + parseInt(m[2], 10) * 60 + parseInt(m[3], 10) + offsetSec;
+            if (totalSec < 0) totalSec = 0;
+            const totalMin = Math.floor(totalSec / 60);
+            const ss = Math.floor(totalSec % 60);
+            return `${String(totalMin).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
         }
 
         // --- AUDIO PLAYER ---
@@ -2105,10 +2139,12 @@
                     el.audioProgressFill.style.width = (t / audio.duration * 100) + '%';
                 }
 
-                // Find active lyric segment
+                // Find active lyric segment — use SHIFTED times so user-applied offset
+                // correctly matches audio position to displayed cues.
+                const off = state.timeOffset;
                 let idx = -1;
                 for (let i = 0; i < segments.length; i++) {
-                    if (t >= segments[i].startSec && t < segments[i].endSec) {
+                    if (t >= segments[i].startSec + off && t < segments[i].endSec + off) {
                         idx = i;
                         break;
                     }
@@ -2116,7 +2152,7 @@
                 // If between segments, keep last active or find nearest
                 if (idx === -1 && segments.length > 0) {
                     for (let i = segments.length - 1; i >= 0; i--) {
-                        if (t >= segments[i].startSec) {
+                        if (t >= segments[i].startSec + off) {
                             idx = i;
                             break;
                         }
@@ -2228,7 +2264,14 @@
             }
 
             // Raw editor (hidden by default)
-            el.editor.value = state.srt.replace(/,\d{3}/g, '');
+            el.editor.value = getShiftedSrt().replace(/,\d{3}/g, '');
+
+            // Reveal timing-offset control + sync its display to current state
+            if (el.offsetControl) {
+                el.offsetControl.classList.remove('hidden');
+                el.offsetControl.classList.add('md:flex');
+            }
+            applyOffsetToUi();
 
             // Initialize audio player if audio is available
             if (state.audioUrl) {
@@ -2504,6 +2547,16 @@
         }
 
         // Format ETA in human readable format
+        // Format date as d/m/y (consistent across locales — independent of browser locale)
+        function formatDate(value) {
+            const d = value instanceof Date ? value : new Date(value);
+            if (isNaN(d.getTime())) return '';
+            const dd = String(d.getDate()).padStart(2, '0');
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const yyyy = d.getFullYear();
+            return `${dd}/${mm}/${yyyy}`;
+        }
+
         function formatETA(seconds) {
             if (seconds <= 0) return 'calculating...';
             if (seconds < 60) return `${seconds}s`;
@@ -2580,7 +2633,7 @@
                         </div>
                         <div>
                             <p class="text-base font-semibold text-slate-800 dark:text-white">${item.name}</p>
-                            <p class="text-sm text-slate-400 dark:text-slate-500">${new Date(item.date).toLocaleDateString()} • ${item.words} words/line${item.language && item.language !== 'auto' ? ` • ${item.language}` : ''}</p>
+                            <p class="text-sm text-slate-400 dark:text-slate-500">${formatDate(item.date)} • ${item.words} words/line${item.language && item.language !== 'auto' ? ` • ${item.language}` : ''}</p>
                         </div>
                     </div>
                     <div class="flex items-center gap-2">
@@ -2693,9 +2746,95 @@
             setTimeout(() => t.remove(), 3000);
         }
 
+        // ─── Timing-offset helpers ──────────────────────────────────────────
+        // Returns the SRT text with every cue's start/end shifted by state.timeOffset.
+        // Clamps to t≥0 so a negative offset can't produce invalid timestamps.
+        function getShiftedSrt() {
+            if (!state.srt) return '';
+            if (!state.timeOffset) return state.srt;
+            const delta = state.timeOffset;
+            return state.srt.replace(
+                /(\d{2}):(\d{2}):(\d{2}),(\d{3})/g,
+                (match, h, m, s, ms) => {
+                    const totalSec = +h * 3600 + +m * 60 + +s + +ms / 1000 + delta;
+                    if (totalSec < 0) return '00:00:00,000';
+                    const hh = Math.floor(totalSec / 3600);
+                    const mm = Math.floor((totalSec % 3600) / 60);
+                    const ss = Math.floor(totalSec % 60);
+                    const mss = Math.round((totalSec - Math.floor(totalSec)) * 1000);
+                    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')},${String(mss).padStart(3, '0')}`;
+                }
+            );
+        }
+
+        // Apply the current state.timeOffset to the UI: re-render lyric chips, update
+        // raw editor, refresh the offset value chip, show/hide reset button.
+        function applyOffsetToUi() {
+            const off = state.timeOffset;
+            if (el.offsetValue) {
+                el.offsetValue.textContent = (off >= 0 ? '+' : '') + off.toFixed(1) + 's';
+                el.offsetValue.classList.toggle('text-emerald-600', off > 0);
+                el.offsetValue.classList.toggle('dark:text-emerald-400', off > 0);
+                el.offsetValue.classList.toggle('text-amber-600', off < 0);
+                el.offsetValue.classList.toggle('dark:text-amber-400', off < 0);
+            }
+            if (el.offsetReset) el.offsetReset.classList.toggle('hidden', off === 0);
+
+            // Re-render lyric chips with shifted timestamps
+            const lines = el.lyricsList?.querySelectorAll('.lyric-line') || [];
+            lines.forEach((line, i) => {
+                const seg = segments[i];
+                if (!seg) return;
+                const tsEl = line.querySelector('.lyric-ts');
+                if (tsEl) tsEl.textContent = formatLyricTs(seg.startTime, off);
+            });
+
+            // Update raw SRT editor
+            if (el.editor) el.editor.value = getShiftedSrt().replace(/,\d{3}/g, '');
+        }
+
+        function bumpOffset(deltaSec) {
+            state.timeOffset = Math.round((state.timeOffset + deltaSec) * 10) / 10; // snap to 0.1s
+            applyOffsetToUi();
+            refreshActiveHighlight();
+        }
+
+        function resetOffset() {
+            state.timeOffset = 0;
+            applyOffsetToUi();
+            refreshActiveHighlight();
+        }
+
+        // Re-evaluate which cue should be active for the audio's current time, applying the
+        // latest offset. Needed because audio.ontimeupdate only fires during playback —
+        // when paused, the highlight is stale until we manually re-check.
+        function refreshActiveHighlight() {
+            const t = el.audioEl?.currentTime || 0;
+            const off = state.timeOffset;
+            let idx = -1;
+            for (let i = 0; i < segments.length; i++) {
+                if (t >= segments[i].startSec + off && t < segments[i].endSec + off) {
+                    idx = i;
+                    break;
+                }
+            }
+            if (idx === -1 && segments.length > 0) {
+                for (let i = segments.length - 1; i >= 0; i--) {
+                    if (t >= segments[i].startSec + off) {
+                        idx = i;
+                        break;
+                    }
+                }
+            }
+            if (idx !== currentLyricIdx) {
+                highlightLyric(idx);
+                currentLyricIdx = idx;
+            }
+        }
+
         function download() {
             // Ensure SRT uses CRLF line endings for Premiere Pro compatibility
-            const srtContent = state.srt.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n');
+            const srtContent = getShiftedSrt().replace(/\r\n/g, '\n').replace(/\n/g, '\r\n');
 
             // Add UTF-8 BOM for better Premiere Pro compatibility
             const BOM = '\uFEFF';
@@ -2751,7 +2890,7 @@
 
         async function copy() {
             try {
-                await navigator.clipboard.writeText(state.srt);
+                await navigator.clipboard.writeText(getShiftedSrt());
                 toast('Copied to clipboard', 'success');
                 if (el.copyIcon && el.copyCheck && el.copyLabel) {
                     el.copyIcon.classList.add('hidden');
@@ -2847,6 +2986,9 @@
         el.downloadAudioBtn.onclick = downloadAudio;
         el.downloadTimingBtn.onclick = downloadTiming;
         el.copyBtn.onclick = copy;
+        if (el.offsetUp)    el.offsetUp.onclick    = () => bumpOffset(+0.5);
+        if (el.offsetDown)  el.offsetDown.onclick  = () => bumpOffset(-0.5);
+        if (el.offsetReset) el.offsetReset.onclick = resetOffset;
 
         // Audio player events
         el.playPauseBtn.onclick = togglePlayPause;
