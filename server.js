@@ -11,6 +11,7 @@ import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
+import { Agent, setGlobalDispatcher } from 'undici';
 
 // --- SDK IMPORTS ---
 import { GoogleGenAI } from '@google/genai';
@@ -18,6 +19,16 @@ import { HfInference } from '@huggingface/inference';
 import { separateVocals, isSourceSeparationAvailable } from './source_separation.js';
 import { Storage } from '@google-cloud/storage';
 import speech from '@google-cloud/speech';
+
+// Node 22's default undici fetch caps connection/body/header timeouts at 5 min,
+// which kills long-running Vertex AI generateContent calls on bigger audio
+// files (observed "fetch failed" exactly at 5:06 across multiple runs).
+// Bumping to 30 min lets Vertex finish chunked long-audio inference.
+setGlobalDispatcher(new Agent({
+    headersTimeout: 30 * 60 * 1000,
+    bodyTimeout:    30 * 60 * 1000,
+    connectTimeout: 60 * 1000,
+}));
 
 // Load environment variables
 dotenv.config();
@@ -40,6 +51,10 @@ console.log('[DEBUG] GEMINI_MODEL:', GEMINI_MODEL);
 const GCS_BUCKET_NAME = process.env.GCS_BUCKET_NAME;
 const GCP_PROJECT_ID = process.env.GCP_PROJECT_ID;
 const VERTEX_REGION = process.env.VERTEX_REGION || 'us-central1';
+// Gemini-on-Vertex location. Gemini 3.x (e.g. gemini-3.1-pro-preview) is served
+// ONLY on the 'global' endpoint, so keep this separate from VERTEX_REGION (which
+// also drives the GCS bucket region and the regional Speech-to-Text endpoints).
+const VERTEX_GENAI_LOCATION = process.env.VERTEX_GENAI_LOCATION || 'global';
 
 if (!GCP_PROJECT_ID) {
     console.error('\n[FATAL ERROR] GCP_PROJECT_ID missing in .env\n');
@@ -70,7 +85,7 @@ const SUPPORTED_FORMATS = [...SUPPORTED_AUDIO_FORMATS, ...SUPPORTED_VIDEO_FORMAT
 const aiClient = new GoogleGenAI({
     vertexai: true,
     project: GCP_PROJECT_ID,
-    location: VERTEX_REGION,
+    location: VERTEX_GENAI_LOCATION,
     httpOptions: { timeout: 25 * 60 * 1000 },
 });
 
@@ -602,11 +617,23 @@ app.post('/api/transcribe', upload.single('file'), async (req, res) => {
                 // speech entirely. alignJsonTimestamps fixes timestamps but doesn't add
                 // cues, so missed-by-Gemini speech stayed missing pre-fix.
                 jsonResponse = fillSttGaps(jsonResponse, sttWords, 3.0, wordLimit);
+                // Dead-zone retry: even after fillSttGaps there can be gaps where BOTH
+                // Gemini AND the initial STT pass missed speech (STT word coverage is
+                // context-dependent — running it on just the gap clip often recovers
+                // words the full-audio pass dropped). Verified on bodycam audio:
+                // recovered 21 cues across 3 gaps that were missing in main output.
+                updateProgress(jobId, 'transcribing', 88, 'Checking for dead zones and recovering missed speech...');
+                jsonResponse = await fillDeadZonesViaRetry(jsonResponse, audioPath, language, jobId, 5);
                 usedSTT = true;
                 transcriptionSource = `hybrid (${sttData.model} + ${GEMINI_MODEL})`;
             } else if (sttWords) {
                 log('warn', `Hybrid: Gemini failed, using STT (${sttData.model}) alone`, { jobId: jobId.substring(0, 8) });
                 jsonResponse = buildSegmentsFromSTT(sttWords, wordLimit);
+                // Dead-zone retry: even on STT-only fallback, gaps >5s often contain
+                // speech the initial pass dropped (context-dependent STT behavior).
+                // Without this, when Gemini fails the output has multi-second holes.
+                updateProgress(jobId, 'transcribing', 88, 'Checking for dead zones and recovering missed speech...');
+                jsonResponse = await fillDeadZonesViaRetry(jsonResponse, audioPath, language, jobId, 5);
                 usedSTT = true;
                 transcriptionSource = sttData.model;
             } else if (geminiJson) {
@@ -635,11 +662,13 @@ app.post('/api/transcribe', upload.single('file'), async (req, res) => {
                     model: sttData.model,
                 });
                 jsonResponse = buildSegmentsFromSTT(sttData.words, wordLimit);
-                // Dead-zone retry: find gaps >10s, re-run chirp_2 on those clips
+                // Dead-zone retry: find gaps >5s, re-run chirp_2 on those clips
                 // alone, splice recovered cues back in. Catches speech that the
                 // main pass dropped due to context-related model failures.
+                // Lowered from 10s → 5s after gap-probe testing showed 5-9s gaps
+                // routinely contain 1-3 missed cues on bodycam audio.
                 updateProgress(jobId, 'transcribing', 85, 'Checking for dead zones and recovering missed speech...');
-                jsonResponse = await fillDeadZonesViaRetry(jsonResponse, audioPath, language, jobId);
+                jsonResponse = await fillDeadZonesViaRetry(jsonResponse, audioPath, language, jobId, 5);
                 usedSTT = true;
                 transcriptionSource = sttData.model;
             } else {
@@ -2204,6 +2233,18 @@ function buildEnhancedPrompt(wordLimit, vocabulary = [], audioDurationSec = null
     return `You are a forensic transcription engine. Your task is to transcribe ONLY HUMAN SPEECH from audio to a JSON array.
 ${vocabString}${durationHint}${languageInstruction}
 
+ABSOLUTE PROHIBITIONS (read carefully — violating these breaks the pipeline):
+- DO NOT add narrator-style commentary describing what is happening in the audio.
+  Forbidden examples: "The suspect takes her time", "She moves out of the hotel",
+  "The officers are losing patience", "Now the drama begins", "Just after that...".
+- DO NOT summarize, recap, or re-transcribe any portion of the audio. Each
+  spoken utterance must appear EXACTLY ONCE in the output array.
+- DO NOT describe scenes, actions, emotions, or events — transcribe ONLY the
+  literal words a human voice says.
+- If the audio itself contains a YouTube/documentary voice-over, transcribe it
+  VERBATIM as you hear it. NEVER add your own narration on top of it.
+- DO NOT include any cue whose text wasn't actually spoken in the audio.
+
 CRITICAL INSTRUCTIONS:
 1. ONLY transcribe human speech (spoken words, dialogue, narration)
 2. IGNORE all music, instrumental sections, sound effects, and background noise
@@ -2673,10 +2714,32 @@ function dedupAndFilterSegments(segments) {
         result.push(cur);
     }
 
-    if (filtered.length !== segments.length || result.length !== filtered.length) {
-        log('info', `dedupAndFilter: ${segments.length} → ${result.length} cues (dropped ${segments.length - result.length})`);
+    // 4. Drop cross-timeline duplicates: same text appearing >30s apart.
+    //    Almost always a Gemini "recap" hallucination, not real replayed audio.
+    //    Verified on bodycam audio where Gemini emitted the same dialogue twice
+    //    with the second copy stamped near the audio end.
+    const seenText = new Map();          // normalizedText → first occurrence start (sec)
+    const finalResult = [];
+    let crossDupDropped = 0;
+    for (const seg of result) {
+        const key = (seg.text || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+        // Don't dedup very short cues — "Yes." / "Okay." legitimately repeat
+        if (key.length < 12) { finalResult.push(seg); continue; }
+        const firstStart = seenText.get(key);
+        const curStart = parseTimestamp(seg.start);
+        if (firstStart !== undefined && curStart - firstStart > 30) {
+            log('debug', `dedupAndFilter: dropping cross-timeline duplicate "${seg.text}" (orig @${firstStart.toFixed(1)}s, dup @${curStart.toFixed(1)}s)`);
+            crossDupDropped++;
+            continue;
+        }
+        if (firstStart === undefined) seenText.set(key, curStart);
+        finalResult.push(seg);
     }
-    return result;
+
+    if (filtered.length !== segments.length || finalResult.length !== filtered.length) {
+        log('info', `dedupAndFilter: ${segments.length} → ${finalResult.length} cues (dropped ${segments.length - finalResult.length}, of which ${crossDupDropped} cross-timeline dups)`);
+    }
+    return finalResult;
 }
 
 /**
@@ -2946,9 +3009,35 @@ function jsonToSrt(jsonString, wordLimit, audioDurationSec = null) {
         const maxChars = 75;                                // matches MAX_CHARS_HARD
 
         // STEP 1: Parse, validate timestamps, and smart-split long segments
-        segments.forEach((seg) => {
+        // Drop any cue whose start is beyond actual audio length — these are
+        // pure Gemini hallucinations (the model invents content with timestamps
+        // past the audio end, especially after chunked transcription). Verified
+        // on 282s audio where Gemini emitted cues stamped up to 5:55 (354s).
+        // A small margin (2s) tolerates rounding error from ffprobe.
+        const AUDIO_END_TOLERANCE = 2.0;
+        const audioEndLimit = audioDurationSec ? audioDurationSec + AUDIO_END_TOLERANCE : Infinity;
+        let droppedBeyondAudio = 0;
+        const filteredSegments = segments.filter(seg => {
+            const startSec = parseTimestamp(seg.start);
+            if (startSec > audioEndLimit) {
+                droppedBeyondAudio++;
+                return false;
+            }
+            return true;
+        });
+        if (droppedBeyondAudio > 0) {
+            log('warn', `jsonToSrt: dropped ${droppedBeyondAudio} cues beyond audio duration (${audioDurationSec?.toFixed(1)}s)`);
+        }
+
+        filteredSegments.forEach((seg) => {
             let tStart = parseTimestamp(seg.start);
             let tEnd = parseTimestamp(seg.end);
+
+            // Also clamp end to audio duration (cues that START before end but
+            // EXTEND beyond it get trimmed back).
+            if (audioDurationSec && tEnd > audioDurationSec + AUDIO_END_TOLERANCE) {
+                tEnd = audioDurationSec;
+            }
 
             // VALIDATION: Ensure end > start
             if (tEnd <= tStart) {
@@ -2956,15 +3045,16 @@ function jsonToSrt(jsonString, wordLimit, audioDurationSec = null) {
                 tEnd = tStart + Math.max(0.5, words.length * 0.25);
             }
 
-            // VALIDATION: Only clamp clearly-absurd cue durations. The previous
-            // 30s ceiling was too aggressive — Gemini can legitimately emit a
-            // 35-45s cue around long pauses, and snapping the end inward made
-            // every subsequent cue drift relative to audio. We now only reject
-            // genuinely impossible durations (>2 minutes per cue OR more than
-            // 5s/word, whichever is higher).
+            // VALIDATION: clamp cue durations to realistic speaking-rate.
+            // Body-cam testing showed Gemini emitting 25-35s cues for 4-6 word
+            // phrases because it extended cue.end across silence to the next
+            // utterance. That makes a short phrase visually hang on screen for
+            // half a minute. Cap at ~1.2s/word with a 4s floor (so even very
+            // short cues get a readable minimum) and a 12s absolute ceiling
+            // (no single subtitle should ever last 12+ seconds — split it).
             const duration = tEnd - tStart;
             const wordCount = seg.text.trim().split(/\s+/).filter(Boolean).length || 1;
-            const sanityCap = Math.max(15.0, Math.min(120.0, wordCount * 5.0));
+            const sanityCap = Math.max(4.0, Math.min(12.0, wordCount * 1.2));
             if (duration > sanityCap) {
                 log('warn', 'Cue duration exceeds sanity cap — clamping', {
                     duration: duration.toFixed(2), cap: sanityCap.toFixed(2),
