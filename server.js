@@ -17,6 +17,7 @@ import { Agent, setGlobalDispatcher } from 'undici';
 import { GoogleGenAI } from '@google/genai';
 import { HfInference } from '@huggingface/inference';
 import { separateVocals, isSourceSeparationAvailable } from './source_separation.js';
+import { salvageJsonArray } from './json_salvage.js';
 import { Storage } from '@google-cloud/storage';
 import speech from '@google-cloud/speech';
 
@@ -1341,11 +1342,20 @@ async function transcribeVertexInChunks(audioPath, totalDuration, wordLimit, voc
                 chunkSegments = JSON.parse(cleaned);
                 if (!Array.isArray(chunkSegments)) throw new Error('response is not a JSON array');
             } catch (parseErr) {
-                log('warn', `Vertex chunk ${i + 1}: failed to parse JSON`, {
+                // Gemini occasionally emits a corrupt tail on long arrays. Rather
+                // than discard the whole chunk (minutes of good audio), salvage
+                // the valid leading cues.
+                chunkSegments = salvageJsonArray(cleaned);
+                if (chunkSegments.length === 0) {
+                    log('warn', `Vertex chunk ${i + 1}: failed to parse JSON, nothing salvageable — skipping`, {
+                        error: parseErr.message,
+                        preview: cleaned.substring(0, 200),
+                    });
+                    continue;
+                }
+                log('warn', `Vertex chunk ${i + 1}: JSON parse failed — salvaged ${chunkSegments.length} cues from corrupt output`, {
                     error: parseErr.message,
-                    preview: cleaned.substring(0, 200),
                 });
-                continue;
             }
 
             // 6. Offset every timestamp by chunk start, format back to SRT timestamp string
@@ -2990,7 +3000,18 @@ function jsonToSrt(jsonString, wordLimit, audioDurationSec = null) {
         cleanJson = cleanJson.substring(start, end + 1);
         cleanJson = cleanJson.replace(/,\s*([}\]])/g, '$1');
 
-        const segments = JSON.parse(cleanJson);
+        let segments;
+        try {
+            segments = JSON.parse(cleanJson);
+        } catch (parseErr) {
+            // Corrupt tail from Gemini would otherwise fail the entire job —
+            // salvage the valid leading cues instead.
+            segments = salvageJsonArray(cleanJson);
+            if (segments.length === 0) throw parseErr;
+            log('warn', `jsonToSrt: JSON parse failed — salvaged ${segments.length} cues from corrupt output`, {
+                error: parseErr.message,
+            });
+        }
 
         if (!Array.isArray(segments) || segments.length === 0) {
             throw new Error('Invalid or empty array');
