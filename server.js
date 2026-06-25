@@ -360,10 +360,18 @@ function smartSplitSegment(text, startTime, endTime, maxWords = 10, maxChars = 5
 // duration, overlapping or out-of-order cues, or line breaks/blank lines inside
 // a cue. This pass guarantees: clean single-line text, chronological order,
 // strictly positive duration, and no overlaps (monotonic, gap-or-touch only).
-function sanitizeCuesForPremiere(rawCues) {
+function sanitizeCuesForPremiere(rawCues, maxDurationSec = 0) {
     const MIN_DUR = 0.05; // 50ms floor so end is ALWAYS strictly greater than start
 
-    const cleaned = rawCues
+    // When the audio length is known, guard against timestamp hallucinations:
+    // a cue that STARTS past the end of the audio (e.g. a stray "01:00:47" cue on
+    // a 1:43 clip) is garbage and is dropped; a cue that merely OVERRUNS the end is
+    // clamped back to the audio length. Tolerance absorbs rounding at the tail.
+    const hasMax = isFinite(maxDurationSec) && maxDurationSec > 0;
+    const OOB_TOLERANCE = 2.0; // seconds a cue may start past the reported end before we treat it as a hallucination
+    const maxStart = hasMax ? maxDurationSec + OOB_TOLERANCE : Infinity;
+
+    const normalized = rawCues
         .map(c => {
             // Collapse any internal line breaks / control chars so a cue is always one block.
             const text = String(c.text == null ? '' : c.text)
@@ -378,6 +386,25 @@ function sanitizeCuesForPremiere(rawCues) {
             return { start, end, text };
         })
         .filter(c => c.text.length > 0); // drop empty-text cues (Premiere errors on these)
+
+    let droppedOOB = 0;
+    const cleaned = normalized
+        .filter(c => {
+            if (c.start > maxStart) { droppedOOB++; return false; } // out-of-bounds hallucination
+            return true;
+        })
+        .map(c => {
+            // Clamp any remaining cue that overruns the known audio length.
+            if (hasMax) {
+                if (c.start > maxDurationSec) c.start = maxDurationSec;
+                if (c.end > maxDurationSec) c.end = maxDurationSec;
+            }
+            return c;
+        });
+
+    if (droppedOOB > 0) {
+        console.warn(`[sanitize] dropped ${droppedOOB} out-of-bounds cue(s) starting past audio length (${maxDurationSec.toFixed(1)}s)`);
+    }
 
     // Chronological order (then by end) so the overlap sweep is correct.
     cleaned.sort((a, b) => a.start - b.start || a.end - b.end);
@@ -398,7 +425,7 @@ function sanitizeCuesForPremiere(rawCues) {
 
 // Helper: Convert JSON response from AI to SRT format
 // Smart-splits long segments, then runs a Premiere-safe sanitization pass.
-function jsonToSrt(jsonString, wordLimit) {
+function jsonToSrt(jsonString, wordLimit, maxDurationSec = 0) {
     try {
         // Clean the string (remove markdown code blocks if present)
         let cleanJson = jsonString.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -441,8 +468,9 @@ function jsonToSrt(jsonString, wordLimit) {
             }
         });
 
-        // Premiere-safe pass: clean, order, de-overlap, guarantee positive duration.
-        const cues = sanitizeCuesForPremiere(rawCues);
+        // Premiere-safe pass: clean, order, de-overlap, guarantee positive duration,
+        // and drop/clamp cues whose timestamps fall outside the audio length.
+        const cues = sanitizeCuesForPremiere(rawCues, maxDurationSec);
         if (cues.length === 0) return "";
 
         // Emit SRT: sequential 1-based numbering, CRLF line endings, blank line between cues.
@@ -767,7 +795,10 @@ app.post('/api/transcribe', upload.single('file'), async (req, res) => {
 
                     // IMPORTANT: Normalize SRT before returning to ensure timestamps are HH:MM:SS,mmm
                     // This guarantees adjustSrtTimestamps regex works.
-                    return jsonToSrt(result.response.text(), wordLimit);
+                    // Timestamps here are chunk-relative (0-based), so clamp/drop against
+                    // this chunk's own duration before it gets shifted by the offset.
+                    const chunkDuration = await getAudioDuration(chunkPath);
+                    return jsonToSrt(result.response.text(), wordLimit, chunkDuration);
                 } catch (error) {
                     console.error(`[Error] Failed to process chunk ${idx + 1}/${total}:`, error.message);
                     sendProgress(jobId, 'error', 0, `Failed to process part ${idx + 1}/${total}: ${error.message}`);
@@ -807,7 +838,7 @@ app.post('/api/transcribe', upload.single('file'), async (req, res) => {
                     throw new Error("Gemini returned empty response (Possible safety block).");
                 }
 
-                finalSrt = jsonToSrt(text, wordLimit);
+                finalSrt = jsonToSrt(text, wordLimit, duration);
 
             } catch (geminiError) {
                 // --- FALLBACK TRIGGER ---
@@ -897,6 +928,6 @@ app.listen(port, () => {
     console.log(`📍 URL:   http://localhost:${port}`);
     console.log(`🤖 Model: ${MODEL_NAME}`);
     console.log(`══════════════════════════════════════════\n`);
-    // Setup generic favicon to stop 404 noise
-    app.get('/favicon.ico', (req, res) => res.status(204).end());
+    // Point legacy /favicon.ico requests at the SVG logo (served via express.static).
+    app.get('/favicon.ico', (req, res) => res.redirect(301, '/favicon.svg'));
 });
