@@ -355,8 +355,49 @@ function smartSplitSegment(text, startTime, endTime, maxWords = 10, maxChars = 5
     return segments;
 }
 
+// Helper: Make a cue list bulletproof for Adobe Premiere Pro import.
+// Premiere rejects (or silently drops) SRTs with: empty cue text, zero/negative
+// duration, overlapping or out-of-order cues, or line breaks/blank lines inside
+// a cue. This pass guarantees: clean single-line text, chronological order,
+// strictly positive duration, and no overlaps (monotonic, gap-or-touch only).
+function sanitizeCuesForPremiere(rawCues) {
+    const MIN_DUR = 0.05; // 50ms floor so end is ALWAYS strictly greater than start
+
+    const cleaned = rawCues
+        .map(c => {
+            // Collapse any internal line breaks / control chars so a cue is always one block.
+            const text = String(c.text == null ? '' : c.text)
+                .replace(/\r\n|\r|\n/g, ' ')
+                .replace(new RegExp('[\\u0000-\\u001F\\u007F]', 'g'), ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            let start = Number(c.start);
+            let end = Number(c.end);
+            if (!isFinite(start) || start < 0) start = 0;
+            if (!isFinite(end)) end = start;
+            return { start, end, text };
+        })
+        .filter(c => c.text.length > 0); // drop empty-text cues (Premiere errors on these)
+
+    // Chronological order (then by end) so the overlap sweep is correct.
+    cleaned.sort((a, b) => a.start - b.start || a.end - b.end);
+
+    // Forward sweep: every cue starts no earlier than the previous one ended, and
+    // every cue has a strictly positive duration. This is the structure Premiere wants.
+    const out = [];
+    let lastEnd = 0;
+    for (const c of cleaned) {
+        let s = c.start < lastEnd ? lastEnd : c.start;
+        let e = c.end;
+        if (!(e > s + 0.001)) e = s + MIN_DUR;
+        out.push({ start: s, end: e, text: c.text });
+        lastEnd = e;
+    }
+    return out;
+}
+
 // Helper: Convert JSON response from AI to SRT format
-// Now with smart splitting for segments that exceed limits
+// Smart-splits long segments, then runs a Premiere-safe sanitization pass.
 function jsonToSrt(jsonString, wordLimit) {
     try {
         // Clean the string (remove markdown code blocks if present)
@@ -374,72 +415,51 @@ function jsonToSrt(jsonString, wordLimit) {
         cleanJson = cleanJson.substring(start, end + 1);
         const segments = JSON.parse(cleanJson);
 
-        let srtOutput = "";
-        let finalSegments = [];
-        let segmentIndex = 1;
+        // Build a NUMERIC cue list (seconds) so the sanitizer can do exact math,
+        // formatting to HH:MM:SS,mmm only once at the very end.
+        const rawCues = [];
+        const maxWords = 12; // Stricter limits: 12 words OR 50 characters
+        const maxChars = 50;
 
-        // Process segments
         segments.forEach((seg) => {
-            // STEP 1: NORMALIZE TIMESTAMPS (Fix for AI returning MM:SS etc)
-            // Parse untrusted string -> seconds -> format as standard HH:MM:SS,mmm
-            // This ensures all subsequent logic works with a predictable format.
+            if (!seg || typeof seg.text !== 'string') return;
+            const text = seg.text.trim();
+            if (!text) return;
+
+            // Normalize timestamps (handles AI returning MM:SS etc) -> seconds.
             const tStart = parseTimestamp(seg.start);
             const tEnd = parseTimestamp(seg.end);
 
-            const startStr = formatTimestamp(tStart);
-            const endStr = formatTimestamp(tEnd);
-
-            // STEP 2: Smart splitting logic with character and word limits
-            const words = seg.text.trim().split(/\s+/);
-            const charCount = seg.text.trim().length;
-
-            // Stricter limits: 12 words OR 50 characters
-            const maxWords = 12;
-            const maxChars = 50;
-
-            if (words.length <= maxWords && charCount <= maxChars) {
-                // Within limits - trust the AI segmentation
-                finalSegments.push({
-                    index: segmentIndex++,
-                    start: startStr,
-                    end: endStr,
-                    text: seg.text.trim()
-                });
+            const words = text.split(/\s+/);
+            if (words.length <= maxWords && text.length <= maxChars) {
+                // Within limits - trust the AI segmentation.
+                rawCues.push({ start: tStart, end: tEnd, text });
             } else {
-                // Exceeds limits - use smart splitting
-                const splitSegments = smartSplitSegment(seg.text.trim(), tStart, tEnd, maxWords, maxChars);
-
-                splitSegments.forEach(splitSeg => {
-                    finalSegments.push({
-                        index: segmentIndex++,
-                        start: formatTimestamp(splitSeg.start),
-                        end: formatTimestamp(splitSeg.end),
-                        text: splitSeg.text
-                    });
-                });
+                // Exceeds limits - smart-split into readable sub-cues.
+                smartSplitSegment(text, tStart, tEnd, maxWords, maxChars)
+                    .forEach(s => rawCues.push({ start: s.start, end: s.end, text: s.text }));
             }
         });
 
-        // Build SRT String with punctuation cleanup
-        // Use CRLF line endings for Premiere Pro compatibility
-        finalSegments.forEach(seg => {
-            // Clean single-word segments: remove trailing punctuation
+        // Premiere-safe pass: clean, order, de-overlap, guarantee positive duration.
+        const cues = sanitizeCuesForPremiere(rawCues);
+        if (cues.length === 0) return "";
+
+        // Emit SRT: sequential 1-based numbering, CRLF line endings, blank line between cues.
+        let srtOutput = "";
+        cues.forEach((seg, i) => {
             let cleanText = seg.text;
-            const wordCount = seg.text.trim().split(/\s+/).length;
-
-            if (wordCount === 1) {
-                // Remove trailing period, comma, exclamation, question mark from single words
-                cleanText = seg.text.replace(/[.,!?]+$/, '');
+            // Clean single-word segments: remove trailing punctuation.
+            if (cleanText.split(/\s+/).length === 1) {
+                cleanText = cleanText.replace(/[.,!?]+$/, '');
             }
-
-            srtOutput += `${seg.index}\r\n${seg.start} --> ${seg.end}\r\n${cleanText}\r\n\r\n`;
+            srtOutput += `${i + 1}\r\n${formatTimestamp(seg.start)} --> ${formatTimestamp(seg.end)}\r\n${cleanText}\r\n\r\n`;
         });
 
-        // Remove trailing newlines and ensure proper ending
+        // Ensure a single clean trailing newline.
         return srtOutput.trimEnd() + '\r\n';
     } catch (e) {
         console.error("Error parsing JSON to SRT:", e);
-        // Fallback or return empty
         return "";
     }
 }
@@ -627,6 +647,13 @@ CRITICAL INSTRUCTIONS:
 3. SKIP any portions of audio that contain no human speech
 4. If the audio contains music with speech, transcribe ONLY the speech parts
 5. If there is NO human speech at all in the audio, return an empty array: []
+
+MULTIPLE / OVERLAPPING SPEAKERS (read carefully — this audio can contain two or more people, sometimes talking at the SAME time):
+6. NEVER merge two different speakers into one cue. Give each speaker's utterance its OWN separate cue.
+7. Anchor every cue's start/end to the EXACT moment those specific words are spoken. Do NOT let one speaker's words push, pull, or shift another speaker's timing.
+8. When two voices overlap, transcribe the clearest / foreground voice for that span, then continue in time order — never blend words from both speakers into a single line.
+9. If overlapping speech is genuinely unintelligible, transcribe only what is clearly audible and skip the rest. NEVER invent or guess words to fill an overlap.
+10. Output cues in strict CHRONOLOGICAL order. A cue's start time must never be earlier than the previous cue's start time, and no timestamp may exceed the audio's total length.
 
 You MUST return ONLY a valid JSON array. Nothing else. Start with [ and end with ].
 

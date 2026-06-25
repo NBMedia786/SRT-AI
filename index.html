@@ -4,389 +4,321 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SRT Studio | AI Subtitle Generator</title>
+    <title>SRT Studio — AI Subtitle Generator</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script>
         tailwind.config = {
             theme: {
                 extend: {
-                    fontFamily: { sans: ['DM Sans', 'system-ui', 'sans-serif'] },
+                    fontFamily: {
+                        sans: ['Hanken Grotesk', 'system-ui', 'sans-serif'],
+                        display: ['Fraunces', 'Georgia', 'serif'],
+                        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace']
+                    },
                     colors: {
+                        // Vermilion accent — also mapped to `primary` so existing
+                        // phase-badge class toggles (bg-primary-100 / text-primary-700) stay in-theme.
                         primary: {
-                            50: '#eef2ff',
-                            100: '#e0e7ff',
-                            200: '#c7d2fe',
-                            300: '#a5b4fc',
-                            400: '#818cf8',
-                            500: '#6366f1',
-                            600: '#4f46e5',
-                            700: '#4338ca'
-                        }
+                            50: '#FFF3EF', 100: '#FFE7DF', 200: '#FFC9B8', 300: '#FFA88E',
+                            400: '#FF7C56', 500: '#FF5A30', 600: '#ED4316', 700: '#C9360F'
+                        },
+                        paper: '#F5F2EC',
+                        ink: { DEFAULT: '#1C1A16', soft: '#6B655C', faint: '#9A938A' },
+                        line: '#E8E3D9',
+                        teal: { 50: '#EDF7F4', 100: '#DBF0EA', 500: '#12937A', 600: '#0E7C66', 700: '#0B6253' },
+                        accent: { DEFAULT: '#ED4316', 600: '#C9360F', soft: '#FFE7DF' }
                     }
                 }
             }
         }
     </script>
     <style>
-        * {
-            scrollbar-width: thin;
-            scrollbar-color: #cbd5e1 #f1f5f9;
+        :root {
+            --paper: #F5F2EC;
+            --surface: #FFFEFB;
+            --ink: #1C1A16;
+            --ink-soft: #6B655C;
+            --ink-faint: #9A938A;
+            --line: #E8E3D9;
+            --line-strong: #DBD4C6;
+            --accent: #ED4316;
+            --accent-600: #C9360F;
+            --accent-soft: #FFE7DF;
+            --teal: #0E7C66;
         }
 
-        ::-webkit-scrollbar {
-            width: 8px;
+        html { -webkit-text-size-adjust: 100%; }
+
+        body {
+            background-color: var(--paper);
+            background-image:
+                radial-gradient(900px 600px at 100% -5%, rgba(237, 67, 22, 0.06), transparent 60%),
+                radial-gradient(800px 700px at -10% 110%, rgba(14, 124, 102, 0.06), transparent 55%);
+            background-attachment: fixed;
+            font-feature-settings: "ss01", "cv01";
         }
 
-        ::-webkit-scrollbar-track {
-            background: #f1f5f9;
+        /* Subtle paper grain for depth */
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            opacity: 0.35;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+            mix-blend-mode: multiply;
         }
 
-        ::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 4px;
-        }
+        .app-shell { position: relative; z-index: 1; }
 
-        ::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
+        /* Display headings tuned for Fraunces optical sizing */
+        .font-display { letter-spacing: -0.01em; }
+        h1.font-display, h2.font-display, h3.font-display { font-optical-sizing: auto; }
+
+        /* Scrollbars */
+        * { scrollbar-width: thin; scrollbar-color: #cfc8b9 transparent; }
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #d6cfc1; border-radius: 6px; border: 2px solid var(--paper); }
+        ::-webkit-scrollbar-thumb:hover { background: #c2bAa6; }
+
+        /* Focus visibility (a11y) */
+        a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+            border-radius: 8px;
         }
 
         /* Range slider */
-        input[type="range"] {
-            -webkit-appearance: none;
-            appearance: none;
-            background: transparent;
-            cursor: pointer;
-        }
-
-        input[type="range"]::-webkit-slider-track {
-            height: 8px;
-            background: #e2e8f0;
-            border-radius: 4px;
-        }
-
+        input[type="range"] { -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; height: 22px; }
+        input[type="range"]::-webkit-slider-runnable-track { height: 6px; border-radius: 999px; background: linear-gradient(to right, var(--accent) var(--fill, 42%), #E4DECF var(--fill, 42%)); }
         input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            width: 20px;
-            height: 20px;
-            background: #4f46e5;
-            border-radius: 50%;
-            margin-top: -6px;
-            box-shadow: 0 2px 6px rgba(79, 70, 229, 0.4);
+            -webkit-appearance: none; width: 20px; height: 20px; margin-top: -7px;
+            background: var(--accent); border: 3px solid #fff; border-radius: 50%;
+            box-shadow: 0 2px 8px rgba(237, 67, 22, 0.4); transition: transform .15s ease;
         }
+        input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.12); }
+        input[type="range"]::-moz-range-track { height: 6px; border-radius: 999px; background: linear-gradient(to right, var(--accent) var(--fill, 42%), #E4DECF var(--fill, 42%)); }
+        input[type="range"]::-moz-range-progress { height: 6px; border-radius: 999px; background: var(--accent); }
+        input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; background: var(--accent); border: 3px solid #fff; border-radius: 50%; box-shadow: 0 2px 8px rgba(237,67,22,.4); }
 
-        input[type="range"]::-webkit-slider-thumb:hover {
-            background: #4338ca;
-            transform: scale(1.1);
-        }
-
-        input[type="range"]::-moz-range-track {
-            height: 8px;
-            background: #e2e8f0;
-            border-radius: 4px;
-        }
-
-        input[type="range"]::-moz-range-thumb {
-            width: 20px;
-            height: 20px;
-            background: #4f46e5;
-            border-radius: 50%;
-            border: none;
-        }
-
-        /* Button styles */
+        /* Buttons */
         .btn {
-            font-weight: 600;
-            transition: all 0.2s ease;
-            border-radius: 10px;
+            font-weight: 600; transition: transform .15s ease, box-shadow .2s ease, background .2s ease, border-color .2s ease, color .2s ease;
+            border-radius: 12px; letter-spacing: -0.01em;
         }
-
-        .btn:active {
-            transform: scale(0.98);
-        }
-
+        .btn:active { transform: translateY(0) scale(.985); }
         .btn-primary {
-            background: linear-gradient(135deg, #6366f1, #4f46e5);
-            color: white;
-            box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);
+            background: var(--accent); color: #fff;
+            box-shadow: 0 1px 0 rgba(255,255,255,.3) inset, 0 8px 20px -8px rgba(201, 54, 15, .55);
         }
+        .btn-primary:hover { background: var(--accent-600); transform: translateY(-1px); box-shadow: 0 12px 26px -10px rgba(201,54,15,.65); }
+        .btn-secondary { background: var(--surface); color: var(--ink); border: 1px solid var(--line-strong); }
+        .btn-secondary:hover { border-color: #cabfa9; background: #FBF9F4; }
+        .btn-ghost { background: transparent; color: var(--ink-soft); }
+        .btn-ghost:hover { background: #efeadf; color: var(--ink); }
 
-        .btn-primary:hover {
-            box-shadow: 0 6px 20px rgba(79, 70, 229, 0.45);
-            transform: translateY(-1px);
-        }
-
-        .btn-secondary {
-            background: white;
-            color: #334155;
-            border: 2px solid #e2e8f0;
-        }
-
-        .btn-secondary:hover {
-            border-color: #cbd5e1;
-            background: #f8fafc;
-        }
-
-        /* Card */
+        /* Surfaces */
         .card {
-            background: white;
-            border: 1px solid #e2e8f0;
-            border-radius: 16px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            box-shadow: 0 1px 2px rgba(28,26,22,.04), 0 12px 30px -22px rgba(28,26,22,.25);
         }
 
         /* Drop zone */
         .drop-zone {
-            border: 2px dashed #cbd5e1;
-            background: #fafbfc;
+            border: 1.5px dashed #cdbf9f;
+            background:
+                linear-gradient(var(--surface), var(--surface)) padding-box,
+                repeating-linear-gradient(45deg, #faf7f0, #faf7f0 12px, #f5f1e7 12px, #f5f1e7 24px);
+            transition: border-color .2s ease, background .2s ease, transform .2s ease;
         }
-
-        .drop-zone:hover {
-            border-color: #6366f1;
-            background: #f5f3ff;
-        }
-
-        .drop-active {
-            border-color: #6366f1 !important;
-            background: #eef2ff !important;
-        }
+        .drop-zone:hover { border-color: var(--accent); transform: translateY(-2px); }
+        .drop-active { border-color: var(--accent) !important; background: var(--accent-soft) !important; }
 
         /* Progress ring */
-        .progress-ring {
-            transition: stroke-dashoffset 0.5s ease;
+        .progress-ring { transition: stroke-dashoffset .6s cubic-bezier(.25,.8,.25,1); animation: ringBreathe 2.4s ease-in-out infinite; }
+        @keyframes ringBreathe { 0%, 100% { opacity: .82; } 50% { opacity: 1; } }
+
+        /* Sidebar nav */
+        .nav-link { transition: background .18s, color .18s; position: relative; }
+        .nav-link:hover { background: #efeadf; color: var(--ink); }
+        .nav-link.active { background: var(--accent-soft); color: var(--accent-600); }
+        .nav-link.active::before {
+            content: ""; position: absolute; left: -4px; top: 50%; transform: translateY(-50%);
+            width: 4px; height: 22px; border-radius: 999px; background: var(--accent);
         }
 
-        /* Stage indicators */
-        .stage-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: #e2e8f0;
-            transition: all 0.3s;
-        }
+        /* Phase badges (default tailwind utility classes are toggled by JS) */
+        .phase-badge { transition: all .25s ease; }
 
-        .stage-active .stage-dot {
-            background: #6366f1;
-            box-shadow: 0 0 12px rgba(99, 102, 241, 0.5);
+        /* Mini stage chips */
+        .stage-mini {
+            display: flex; align-items: center; gap: 7px; padding: 7px 13px; border-radius: 999px;
+            background: #f0ebe0; font-size: 11px; font-weight: 600; color: var(--ink-soft);
+            letter-spacing: .02em; transition: all .3s ease;
         }
+        .stage-mini-dot { width: 8px; height: 8px; border-radius: 50%; background: #cdc4b1; transition: all .3s ease; }
+        .stage-mini.active { background: var(--accent-soft); color: var(--accent-600); }
+        .stage-mini.active .stage-mini-dot { background: var(--accent); box-shadow: 0 0 0 4px rgba(237,67,22,.18); animation: pulse-dot 1.4s infinite; }
+        .stage-mini.complete { background: var(--teal-soft, #DBF0EA); color: var(--teal); }
+        .stage-mini.complete .stage-mini-dot { background: var(--teal); }
 
-        .stage-complete .stage-dot {
-            background: #10b981;
-        }
+        @keyframes pulse-dot { 0%,100% { transform: scale(1); } 50% { transform: scale(1.25); } }
 
         /* Toast */
-        .toast {
-            animation: slideIn 0.3s ease;
+        .toast { animation: slideIn .35s cubic-bezier(.22,1,.36,1); }
+        @keyframes slideIn { from { transform: translateX(110%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+        /* View transitions */
+        .fade-in { animation: fadeIn .4s cubic-bezier(.22,1,.36,1); }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Staggered entrance for sidebar items */
+        .stagger > * { opacity: 0; animation: rise .5s cubic-bezier(.22,1,.36,1) forwards; }
+        .stagger > *:nth-child(1) { animation-delay: .04s; }
+        .stagger > *:nth-child(2) { animation-delay: .10s; }
+        .stagger > *:nth-child(3) { animation-delay: .16s; }
+        .stagger > *:nth-child(4) { animation-delay: .22s; }
+        .stagger > *:nth-child(5) { animation-delay: .28s; }
+        @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+        .stagger > * { transform: translateY(8px); }
+
+        /* Editor */
+        .editor-surface { background:
+            linear-gradient(var(--surface), var(--surface)) padding-box;
+            background-size: 100% 28px;
         }
 
-        @keyframes slideIn {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation: none !important; transition: none !important; }
         }
 
-        /* Fade in */
-        .fade-in {
-            animation: fadeIn 0.3s ease;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        /* Sidebar link */
-        .nav-link {
-            transition: all 0.2s;
-        }
-
-        .nav-link:hover {
-            background: #f1f5f9;
-        }
-
-        .nav-link.active {
-            background: #eef2ff;
-            color: #4f46e5;
-        }
-
-        /* Mini stages for processing phase */
-        .stage-mini {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 6px 12px;
-            border-radius: 9999px;
-            background: #f1f5f9;
-            font-size: 11px;
-            font-weight: 500;
-            color: #64748b;
-            transition: all 0.3s ease;
-        }
-
-        .stage-mini-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #cbd5e1;
-            transition: all 0.3s ease;
-        }
-
-        .stage-mini.active {
-            background: #eef2ff;
-            color: #4f46e5;
-        }
-
-        .stage-mini.active .stage-mini-dot {
-            background: #6366f1;
-            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
-            animation: pulse-dot 1.5s infinite;
-        }
-
-        .stage-mini.complete {
-            background: #ecfdf5;
-            color: #059669;
-        }
-
-        .stage-mini.complete .stage-mini-dot {
-            background: #10b981;
-        }
-
-        @keyframes pulse-dot {
-
-            0%,
-            100% {
-                transform: scale(1);
-            }
-
-            50% {
-                transform: scale(1.2);
-            }
+        /* Sidebar drawer (mobile) */
+        @media (max-width: 1023px) {
+            #sidebar { position: fixed; inset: 0 auto 0 0; z-index: 50; transform: translateX(-100%); transition: transform .3s cubic-bezier(.22,1,.36,1); }
+            #sidebar.open { transform: translateX(0); box-shadow: 0 24px 60px -20px rgba(28,26,22,.5); }
         }
     </style>
 </head>
 
-<body class="h-full bg-slate-50 text-slate-700 font-sans antialiased">
+<body class="h-full text-ink font-sans antialiased">
 
-    <div class="h-full flex">
+    <div class="app-shell h-full flex">
+
+        <!-- Mobile backdrop -->
+        <div id="backdrop" class="hidden fixed inset-0 bg-ink/40 backdrop-blur-[2px] z-40 lg:hidden"></div>
 
         <!-- Sidebar -->
-        <aside class="w-72 bg-white border-r border-slate-200 flex flex-col shadow-sm">
+        <aside id="sidebar" class="w-60 shrink-0 bg-[#FBF8F2] border-r border-line flex flex-col">
 
-            <!-- Logo -->
-            <div class="h-20 flex items-center px-6 border-b border-slate-100">
+            <!-- Wordmark -->
+            <div class="h-20 flex items-center justify-between px-6 border-b border-line">
                 <div class="flex items-center gap-3">
-                    <div
-                        class="w-11 h-11 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center shadow-lg shadow-primary-500/30">
-                        <svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                            stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round"
-                                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    <div class="w-11 h-11 rounded-2xl bg-ink flex items-center justify-center shadow-lg shadow-ink/20">
+                        <svg class="w-6 h-6 text-paper" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+                            <rect x="3" y="6" width="18" height="12" rx="2.5"></rect>
+                            <path stroke-linecap="round" d="M7 11h2.5M7 14.5h6.5M12.5 11H17M16 14.5h1" />
                         </svg>
                     </div>
                     <div>
-                        <h1 class="text-lg font-bold text-slate-800">SRT Studio</h1>
-                        <p class="text-xs text-slate-400 font-medium">AI Subtitle Generator</p>
+                        <h1 class="font-display text-[20px] leading-none font-semibold text-ink">SRT Studio</h1>
+                        <p class="text-[11px] text-ink-faint font-semibold uppercase tracking-[0.16em] mt-1">Subtitle Engine</p>
                     </div>
                 </div>
+                <button id="menu-close" class="lg:hidden btn btn-ghost w-9 h-9 flex items-center justify-center" aria-label="Close menu">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
+                </button>
             </div>
 
-            <!-- Navigation -->
-            <nav class="flex-1 p-4 space-y-2">
-                <button id="nav-studio"
-                    class="nav-link active w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold">
-                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round"
-                            d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                    </svg>
-                    Studio
-                </button>
-                <button id="nav-history"
-                    class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-500">
-                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round"
-                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    History
-                </button>
-            </nav>
+            <div class="flex-1 flex flex-col stagger overflow-y-auto">
+                <!-- Navigation -->
+                <nav class="p-4 space-y-1.5">
+                    <button id="nav-studio" class="nav-link active w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold">
+                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
+                        </svg>
+                        Home
+                    </button>
+                    <button id="nav-history" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-ink-soft">
+                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        History
+                    </button>
+                </nav>
 
-            <!-- Status Card -->
-            <div class="p-4">
-                <div class="card p-4 bg-gradient-to-br from-slate-50 to-white">
-                    <div class="flex items-center gap-2 mb-2">
-                        <div class="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></div>
-                        <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Status</span>
+                <!-- Words-per-line control -->
+                <div class="mx-4 mt-1 px-5 py-4 rounded-2xl bg-surface border border-line">
+                    <div class="flex items-center justify-between gap-3 mb-2.5">
+                        <label for="words-slider" class="text-[11px] font-bold text-ink-soft uppercase tracking-[0.14em]">Words / line</label>
+                        <span id="words-value" class="w-9 h-9 shrink-0 rounded-xl bg-ink text-paper flex items-center justify-center text-sm font-bold tabular-nums">8</span>
                     </div>
-                    <p id="status-text" class="text-base font-bold text-slate-800">Ready</p>
-                    <p id="model-display" class="text-xs text-slate-400 mt-0.5">Gemini 2.5 Pro</p>
+                    <p class="text-[11px] text-ink-faint leading-snug mb-4">Max words per subtitle line</p>
+                    <input type="range" id="words-slider" min="3" max="15" value="8" class="w-full block" aria-label="Words per subtitle line" style="--fill:41.67%">
+                    <div class="flex items-center justify-between mt-3 text-[10px] font-semibold tracking-[0.08em] text-ink-faint">
+                        <span>SHORTER</span>
+                        <span id="words-hint" class="text-accent-600 font-bold tracking-normal">balanced</span>
+                        <span>LONGER</span>
+                    </div>
                 </div>
-            </div>
 
-            <!-- Slider -->
-            <div class="p-4 border-t border-slate-100">
-                <label class="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-4">Words per
-                    line</label>
-                <div class="flex items-center gap-4">
-                    <input type="range" id="words-slider" min="3" max="15" value="8" class="flex-1">
-                    <span id="words-value"
-                        class="w-10 h-10 rounded-xl bg-primary-100 text-primary-700 flex items-center justify-center text-sm font-bold">8</span>
+                <!-- New project (top) -->
+                <div class="px-4 pt-5">
+                    <button id="new-btn" class="btn btn-secondary w-full py-3 text-sm flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14M5 12h14" /></svg>
+                        New Project
+                    </button>
                 </div>
-                <div class="flex justify-between text-[10px] text-slate-400 mt-2 px-1">
-                    <span>Shorter</span>
-                    <span>Longer</span>
-                </div>
-            </div>
 
-            <!-- New Project -->
-            <div class="p-4">
-                <button id="new-btn"
-                    class="btn btn-secondary w-full py-3 text-sm flex items-center justify-center gap-2">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
-                    </svg>
-                    New Project
-                </button>
+                <div class="flex-1"></div>
+
+                <!-- Status (bottom) -->
+                <div class="p-4">
+                    <div class="flex items-center gap-2.5 rounded-xl border border-line bg-surface px-3.5 py-2.5">
+                        <span class="relative flex w-2.5 h-2.5 shrink-0">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-500 opacity-60"></span>
+                            <span class="relative inline-flex rounded-full w-2.5 h-2.5 bg-teal-600"></span>
+                        </span>
+                        <div class="leading-tight">
+                            <p class="text-[9px] font-bold text-ink-faint uppercase tracking-[0.16em]">Status</p>
+                            <p id="status-text" class="text-[15px] font-display font-semibold text-ink leading-tight">Ready</p>
+                        </div>
+                    </div>
+                </div>
             </div>
         </aside>
 
         <!-- Main -->
-        <main class="flex-1 flex flex-col overflow-hidden bg-slate-50">
+        <main class="flex-1 flex flex-col overflow-hidden min-w-0">
 
             <!-- Header -->
-            <header class="h-20 flex items-center justify-between px-8 bg-white border-b border-slate-200">
-                <div>
-                    <h2 id="page-title" class="text-xl font-bold text-slate-800">Studio</h2>
-                    <p id="page-desc" class="text-sm text-slate-400">Generate subtitles from audio & video</p>
+            <header class="h-20 shrink-0 flex items-center justify-between gap-4 px-5 sm:px-8 bg-[#FBF8F2]/80 backdrop-blur border-b border-line">
+                <div class="flex items-center gap-3 min-w-0">
+                    <button id="menu-toggle" class="lg:hidden btn btn-secondary w-10 h-10 flex items-center justify-center shrink-0" aria-label="Open menu">
+                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M4 7h16M4 12h16M4 17h16"/></svg>
+                    </button>
+                    <div class="min-w-0">
+                        <h2 id="page-title" class="font-display text-[22px] sm:text-2xl font-semibold text-ink leading-none truncate">Home</h2>
+                        <p id="page-desc" class="text-sm text-ink-soft mt-1 truncate">Generate subtitles from audio &amp; video</p>
+                    </div>
                 </div>
-                <div class="flex items-center gap-4">
-                    <span id="file-display" class="text-sm text-slate-500 hidden font-medium"></span>
+                <div class="flex items-center gap-3 shrink-0">
+                    <span id="file-display" class="text-sm text-ink-soft hidden font-medium max-w-[180px] truncate"></span>
                     <button id="download-btn" class="btn btn-primary px-5 py-2.5 text-sm hidden items-center gap-2">
-                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round"
-                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                        </svg>
-                        Download SRT
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                        <span class="hidden sm:inline">Download</span> SRT
                     </button>
                 </div>
             </header>
 
             <!-- Content -->
-            <div class="flex-1 overflow-y-auto p-8">
+            <div class="flex-1 overflow-y-auto p-5 sm:p-8">
 
                 <!-- Studio View -->
                 <div id="studio-view" class="h-full">
@@ -395,56 +327,53 @@
                     <div id="upload-view" class="h-full flex items-center justify-center fade-in">
                         <div class="w-full max-w-2xl">
 
+                            <div class="text-center mb-7">
+                                <p class="text-[12px] font-bold tracking-[0.22em] text-accent uppercase mb-3">AI Transcription</p>
+                                <h3 class="font-display text-3xl sm:text-[2.4rem] font-semibold text-ink leading-[1.05]">Turn speech into <span class="italic text-accent">perfectly timed</span> subtitles</h3>
+                                <p class="text-base text-ink-soft mt-3 max-w-md mx-auto">Drop a video or audio file and let Gemini generate a clean, editor-ready <span class="font-mono text-sm">.srt</span>.</p>
+                            </div>
+
                             <!-- Drop Zone -->
-                            <div id="drop-zone"
-                                class="drop-zone card p-12 cursor-pointer text-center rounded-2xl transition-all">
+                            <div id="drop-zone" class="drop-zone p-10 sm:p-12 cursor-pointer text-center rounded-3xl" role="button" tabindex="0" aria-label="Upload a file">
                                 <input type="file" id="file-input" class="hidden" accept="video/*,audio/*">
 
-                                <div
-                                    class="w-20 h-20 mx-auto mb-6 rounded-2xl bg-primary-100 flex items-center justify-center">
-                                    <svg class="w-10 h-10 text-primary-500" fill="none" viewBox="0 0 24 24"
-                                        stroke="currentColor" stroke-width="1.5">
-                                        <path stroke-linecap="round" stroke-linejoin="round"
-                                            d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                                <div class="w-20 h-20 mx-auto mb-6 rounded-2xl bg-ink flex items-center justify-center shadow-lg shadow-ink/20">
+                                    <svg class="w-9 h-9 text-paper" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
                                     </svg>
                                 </div>
 
-                                <h3 class="text-2xl font-bold text-slate-800 mb-2">Drop your file here</h3>
-                                <p class="text-base text-slate-400 mb-6">Supports MP4, MP3, WAV, MOV and more</p>
+                                <h3 class="font-display text-2xl font-semibold text-ink mb-1.5">Drop your file here</h3>
+                                <p class="text-[15px] text-ink-soft mb-6">or click to browse — MP4, MP3, WAV, MOV, M4A &amp; more</p>
 
-                                <button id="browse-btn" class="btn btn-primary px-8 py-3 text-base">
-                                    Browse Files
-                                </button>
+                                <button id="browse-btn" class="btn btn-primary px-8 py-3 text-base">Browse Files</button>
 
-                                <p class="text-sm text-slate-400 mt-6">Maximum file size: 2GB · Up to 1 hour duration
-                                </p>
+                                <div class="flex items-center justify-center gap-5 text-[13px] text-ink-faint mt-7">
+                                    <span class="flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375"/></svg>Up to 2GB</span>
+                                    <span class="w-1 h-1 rounded-full bg-line-strong"></span>
+                                    <span class="flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z"/></svg>~1 hour duration</span>
+                                </div>
                             </div>
 
                             <!-- File Card -->
                             <div id="file-card" class="hidden card p-5 mt-5 fade-in">
-                                <div class="flex items-center justify-between">
-                                    <div class="flex items-center gap-4">
-                                        <div
-                                            class="w-14 h-14 rounded-xl bg-gradient-to-br from-primary-100 to-primary-200 flex items-center justify-center">
-                                            <svg class="w-7 h-7 text-primary-600" fill="none" viewBox="0 0 24 24"
-                                                stroke="currentColor" stroke-width="1.5">
-                                                <path stroke-linecap="round" stroke-linejoin="round"
-                                                    d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+                                <div class="flex items-center justify-between gap-4 flex-wrap">
+                                    <div class="flex items-center gap-4 min-w-0">
+                                        <div class="w-14 h-14 shrink-0 rounded-2xl bg-accent-soft flex items-center justify-center">
+                                            <svg class="w-7 h-7 text-accent-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
                                             </svg>
                                         </div>
-                                        <div>
-                                            <p id="file-name" class="text-base font-semibold text-slate-800">
-                                                filename.mp4</p>
-                                            <p class="text-sm text-emerald-600 font-medium">Ready to process</p>
+                                        <div class="min-w-0">
+                                            <p id="file-name" class="text-[15px] font-semibold text-ink truncate">filename.mp4</p>
+                                            <p class="text-sm text-teal-600 font-semibold flex items-center gap-1.5 mt-0.5">
+                                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                                                Ready to process
+                                            </p>
                                         </div>
                                     </div>
-                                    <button id="generate-btn"
-                                        class="btn btn-primary px-6 py-3 text-sm flex items-center gap-2">
-                                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                                            stroke-width="2">
-                                            <path stroke-linecap="round" stroke-linejoin="round"
-                                                d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
-                                        </svg>
+                                    <button id="generate-btn" class="btn btn-primary px-6 py-3 text-sm flex items-center gap-2 ml-auto">
+                                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" /></svg>
                                         Generate Subtitles
                                     </button>
                                 </div>
@@ -454,157 +383,103 @@
 
                     <!-- Processing View -->
                     <div id="processing-view" class="hidden h-full flex items-center justify-center fade-in">
-                        <div class="w-full max-w-xl card p-10 text-center">
+                        <div class="w-full max-w-md card p-10 sm:p-12 text-center">
 
-                            <!-- Phase Indicator -->
-                            <div id="phase-indicator" class="flex items-center justify-center gap-4 mb-6">
-                                <div id="phase-upload-badge"
-                                    class="flex items-center gap-2 px-4 py-2 rounded-full bg-primary-100 text-primary-700 font-semibold text-sm transition-all">
-                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                                        stroke-width="2">
-                                        <path stroke-linecap="round" stroke-linejoin="round"
-                                            d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                                    </svg>
-                                    <span>Uploading</span>
-                                </div>
-                                <svg class="w-5 h-5 text-slate-300" fill="none" viewBox="0 0 24 24"
-                                    stroke="currentColor" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-                                </svg>
-                                <div id="phase-process-badge"
-                                    class="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-100 text-slate-400 font-semibold text-sm transition-all">
-                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                                        stroke-width="2">
-                                        <path stroke-linecap="round" stroke-linejoin="round"
-                                            d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                    </svg>
-                                    <span>Processing</span>
-                                </div>
+                            <!-- Macro-phase overline -->
+                            <p id="phase-overline" class="text-[10px] font-semibold tracking-[0.2em] text-ink-faint mb-8">UPLOADING</p>
+
+                            <!-- Phase badges — hidden, kept only so existing JS can rewrite them harmlessly -->
+                            <div id="phase-indicator" class="hidden">
+                                <div id="phase-upload-badge" class="phase-badge"><span>Uploading</span></div>
+                                <div id="phase-process-badge" class="phase-badge"><span>Processing</span></div>
                             </div>
 
-                            <!-- Upload Phase -->
-                            <div id="upload-phase" class="mb-6">
-                                <!-- Upload Progress Ring -->
-                                <div class="relative w-40 h-40 mx-auto mb-6">
+                            <!-- Upload phase: the ring only -->
+                            <div id="upload-phase">
+                                <div class="relative w-40 h-40 mx-auto">
                                     <svg class="w-40 h-40 -rotate-90">
-                                        <circle cx="80" cy="80" r="70" stroke="#e2e8f0" stroke-width="12" fill="none" />
-                                        <circle id="upload-ring" cx="80" cy="80" r="70" stroke="url(#upload-gradient)"
-                                            stroke-width="12" fill="none" stroke-dasharray="439.82"
-                                            stroke-dashoffset="439.82" stroke-linecap="round" class="progress-ring" />
+                                        <circle cx="80" cy="80" r="70" stroke="#EAE4D6" stroke-width="11" fill="none" />
+                                        <circle id="upload-ring" cx="80" cy="80" r="70" stroke="url(#upload-gradient)" stroke-width="11" fill="none" stroke-dasharray="439.82" stroke-dashoffset="439.82" stroke-linecap="round" class="progress-ring" />
                                         <defs>
-                                            <linearGradient id="upload-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                                                <stop offset="0%" stop-color="#10b981" />
-                                                <stop offset="100%" stop-color="#34d399" />
+                                            <linearGradient id="upload-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                                <stop offset="0%" stop-color="#12937A" />
+                                                <stop offset="100%" stop-color="#0B6253" />
                                             </linearGradient>
                                         </defs>
                                     </svg>
                                     <div class="absolute inset-0 flex flex-col items-center justify-center">
-                                        <span id="upload-pct" class="text-4xl font-bold text-slate-800">0%</span>
-                                        <span class="text-xs text-slate-400 mt-1">UPLOADING</span>
+                                        <span id="upload-pct" class="text-5xl font-display font-medium text-ink tabular-nums leading-none">0%</span>
+                                        <span class="text-[10px] font-semibold text-ink-faint mt-2 tracking-[0.18em]">UPLOADING</span>
                                     </div>
                                 </div>
-
-                                <!-- Upload Stats -->
-                                <div id="upload-stats" class="grid grid-cols-3 gap-4 mb-4">
-                                    <div class="bg-slate-50 rounded-xl p-3">
-                                        <p class="text-xs text-slate-400 mb-1">Transferred</p>
-                                        <p id="upload-transferred" class="text-sm font-bold text-slate-700">0 MB</p>
-                                    </div>
-                                    <div class="bg-slate-50 rounded-xl p-3">
-                                        <p class="text-xs text-slate-400 mb-1">Speed</p>
-                                        <p id="upload-speed" class="text-sm font-bold text-emerald-600">-- MB/s</p>
-                                    </div>
-                                    <div class="bg-slate-50 rounded-xl p-3">
-                                        <p class="text-xs text-slate-400 mb-1">Remaining</p>
-                                        <p id="upload-eta" class="text-sm font-bold text-slate-700">--</p>
-                                    </div>
+                                <!-- live upload metrics kept in DOM (folded into the status line), not shown as tiles -->
+                                <div class="hidden">
+                                    <span id="upload-transferred">0 MB</span>
+                                    <span id="upload-speed">-- MB/s</span>
+                                    <span id="upload-eta">--</span>
                                 </div>
                             </div>
 
-                            <!-- Processing Phase (Hidden Initially) -->
-                            <div id="process-phase" class="hidden mb-6">
-                                <!-- Processing Progress Ring -->
-                                <div class="relative w-40 h-40 mx-auto mb-6">
+                            <!-- Process phase: the ring only -->
+                            <div id="process-phase" class="hidden">
+                                <div class="relative w-40 h-40 mx-auto">
                                     <svg class="w-40 h-40 -rotate-90">
-                                        <circle cx="80" cy="80" r="70" stroke="#e2e8f0" stroke-width="12" fill="none" />
-                                        <circle id="process-ring" cx="80" cy="80" r="70" stroke="url(#process-gradient)"
-                                            stroke-width="12" fill="none" stroke-dasharray="439.82"
-                                            stroke-dashoffset="439.82" stroke-linecap="round" class="progress-ring" />
+                                        <circle cx="80" cy="80" r="70" stroke="#EAE4D6" stroke-width="11" fill="none" />
+                                        <circle id="process-ring" cx="80" cy="80" r="70" stroke="url(#process-gradient)" stroke-width="11" fill="none" stroke-dasharray="439.82" stroke-dashoffset="439.82" stroke-linecap="round" class="progress-ring" />
                                         <defs>
-                                            <linearGradient id="process-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                                                <stop offset="0%" stop-color="#6366f1" />
-                                                <stop offset="100%" stop-color="#8b5cf6" />
+                                            <linearGradient id="process-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                                <stop offset="0%" stop-color="#FF5A30" />
+                                                <stop offset="100%" stop-color="#C9360F" />
                                             </linearGradient>
                                         </defs>
                                     </svg>
                                     <div class="absolute inset-0 flex flex-col items-center justify-center">
-                                        <span id="process-pct" class="text-4xl font-bold text-slate-800">0%</span>
-                                        <span id="process-stage-label"
-                                            class="text-xs text-slate-400 mt-1">PROCESSING</span>
+                                        <span id="process-pct" class="text-5xl font-display font-medium text-ink tabular-nums leading-none">0%</span>
+                                        <span id="process-stage-label" class="text-[10px] font-semibold text-ink-faint mt-2 tracking-[0.18em]">PROCESSING</span>
                                     </div>
                                 </div>
-
-                                <!-- Processing Stages -->
-                                <div class="flex justify-center gap-2 mb-4">
-                                    <div class="stage-mini" data-stage="converting">
-                                        <div class="stage-mini-dot"></div>
-                                        <span>Convert</span>
-                                    </div>
-                                    <div class="stage-mini" data-stage="uploading-ai">
-                                        <div class="stage-mini-dot"></div>
-                                        <span>Upload to AI</span>
-                                    </div>
-                                    <div class="stage-mini" data-stage="transcribing">
-                                        <div class="stage-mini-dot"></div>
-                                        <span>Transcribe</span>
-                                    </div>
-                                    <div class="stage-mini" data-stage="complete">
-                                        <div class="stage-mini-dot"></div>
-                                        <span>Done</span>
-                                    </div>
+                                <!-- stage chips kept in DOM for state toggling, not shown -->
+                                <div class="hidden">
+                                    <div class="stage-mini" data-stage="converting"><div class="stage-mini-dot"></div><span>Convert</span></div>
+                                    <div class="stage-mini" data-stage="uploading-ai"><div class="stage-mini-dot"></div><span>Upload to AI</span></div>
+                                    <div class="stage-mini" data-stage="transcribing"><div class="stage-mini-dot"></div><span>Transcribe</span></div>
+                                    <div class="stage-mini" data-stage="complete"><div class="stage-mini-dot"></div><span>Done</span></div>
                                 </div>
-
-                                <p id="process-msg" class="text-base text-slate-500">Preparing your file...</p>
                             </div>
 
-                            <!-- Log (Hidden) -->
-                            <div class="hidden bg-slate-50 border border-slate-200 rounded-xl p-4 h-28 overflow-y-auto text-left font-mono text-xs text-slate-600"
-                                id="log-box">
-                                <div class="text-primary-600">[System] Starting...</div>
-                            </div>
+                            <!-- Shared live status line (shows in both phases) -->
+                            <p id="process-msg" class="text-[15px] text-ink-soft mt-7 max-w-xs mx-auto min-h-[2.75rem]">Preparing your audio…</p>
 
-                            <p class="text-sm text-slate-400 mt-4">
-                                Elapsed: <span id="elapsed" class="font-mono font-semibold text-slate-600">00:00</span>
-                            </p>
+                            <!-- Elapsed -->
+                            <p class="text-[13px] text-ink-faint mt-5">Elapsed <span id="elapsed" class="font-mono tabular-nums text-ink-soft ml-1">00:00</span></p>
+
+                            <!-- Log — hidden, kept for diagnostics -->
+                            <div class="hidden" id="log-box"><div class="text-accent">[System] Starting…</div></div>
+
+                            <!-- Cancel -->
+                            <div class="mt-9">
+                                <button id="cancel-job" class="btn btn-ghost px-4 py-2 text-[13px] text-ink-faint hover:text-ink-soft transition-colors duration-150">Cancel</button>
+                            </div>
                         </div>
                     </div>
 
                     <!-- Result View -->
                     <div id="result-view" class="hidden h-full flex flex-col fade-in">
                         <div class="flex-1 card flex flex-col overflow-hidden">
-                            <div
-                                class="h-14 bg-slate-50 border-b border-slate-200 flex items-center justify-between px-5">
-                                <div class="flex items-center gap-3">
-                                    <div class="flex gap-2">
-                                        <div class="w-3 h-3 rounded-full bg-red-400"></div>
-                                        <div class="w-3 h-3 rounded-full bg-yellow-400"></div>
-                                        <div class="w-3 h-3 rounded-full bg-green-400"></div>
-                                    </div>
-                                    <span class="text-sm font-medium text-slate-500 ml-2">SRT Editor</span>
+                            <div class="h-14 shrink-0 bg-[#FBF8F2] border-b border-line flex items-center justify-between px-5">
+                                <div class="flex items-center gap-3 min-w-0">
+                                    <span class="w-8 h-8 rounded-lg bg-ink flex items-center justify-center shrink-0">
+                                        <span class="font-mono text-[10px] font-bold text-paper">SRT</span>
+                                    </span>
+                                    <span class="text-sm font-semibold text-ink truncate">Subtitle Editor</span>
+                                    <span id="cue-count" class="hidden sm:inline text-xs font-medium text-ink-faint bg-paper border border-line rounded-full px-2.5 py-0.5">0 cues</span>
                                 </div>
-                                <button id="copy-btn"
-                                    class="text-sm font-semibold text-primary-600 hover:text-primary-700 flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-primary-50 transition-colors">
-                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                                        stroke-width="2">
-                                        <path stroke-linecap="round" stroke-linejoin="round"
-                                            d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
-                                    </svg>
-                                    Copy to Clipboard
+                                <button id="copy-btn" class="text-sm font-semibold text-accent-600 hover:text-accent flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-accent-soft transition-colors">
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" /></svg>
+                                    <span class="hidden sm:inline">Copy</span>
                                 </button>
                             </div>
-                            <textarea id="editor"
-                                class="flex-1 bg-white p-6 text-slate-700 font-mono text-sm leading-relaxed resize-none focus:outline-none"
-                                readonly></textarea>
+                            <textarea id="editor" class="editor-surface flex-1 p-6 text-ink font-mono text-[13px] leading-7 resize-none focus:outline-none" readonly spellcheck="false"></textarea>
                         </div>
                     </div>
                 </div>
@@ -612,30 +487,22 @@
                 <!-- History View -->
                 <div id="history-view" class="hidden h-full fade-in">
                     <div class="max-w-4xl mx-auto">
-                        <div class="flex items-center justify-between mb-8">
+                        <div class="flex items-center justify-between mb-7">
                             <div>
-                                <h2 class="text-xl font-bold text-slate-800">History</h2>
-                                <p class="text-sm text-slate-400">Your previous transcriptions</p>
+                                <h2 class="font-display text-2xl font-semibold text-ink">History</h2>
+                                <p class="text-sm text-ink-soft mt-0.5">Your previous transcriptions</p>
                             </div>
-                            <button onclick="clearHistory()"
-                                class="text-sm font-semibold text-red-500 hover:text-red-600 px-4 py-2 rounded-xl hover:bg-red-50 transition-colors">
-                                Clear All
-                            </button>
+                            <button onclick="clearHistory()" class="text-sm font-semibold text-red-500 hover:text-red-600 px-4 py-2 rounded-xl hover:bg-red-50 transition-colors">Clear All</button>
                         </div>
 
                         <div id="history-list" class="space-y-3"></div>
 
                         <div id="no-history" class="hidden text-center py-20">
-                            <div
-                                class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-100 flex items-center justify-center">
-                                <svg class="w-8 h-8 text-slate-400" fill="none" viewBox="0 0 24 24"
-                                    stroke="currentColor" stroke-width="1.5">
-                                    <path stroke-linecap="round" stroke-linejoin="round"
-                                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
+                            <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-[#efeadf] flex items-center justify-center">
+                                <svg class="w-8 h-8 text-ink-faint" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                             </div>
-                            <p class="text-base text-slate-400">No history yet</p>
-                            <p class="text-sm text-slate-300 mt-1">Your transcriptions will appear here</p>
+                            <p class="text-base font-display font-semibold text-ink">No history yet</p>
+                            <p class="text-sm text-ink-faint mt-1">Your transcriptions will appear here</p>
                         </div>
                     </div>
                 </div>
@@ -644,7 +511,7 @@
     </div>
 
     <!-- Toast Container -->
-    <div id="toasts" class="fixed bottom-6 right-6 z-50 flex flex-col gap-3"></div>
+    <div id="toasts" class="fixed bottom-6 right-6 z-[60] flex flex-col gap-3"></div>
 
     <script>
         // UUID Polyfill for HTTP (non-secure) connections
@@ -652,7 +519,6 @@
             if (typeof crypto !== 'undefined' && crypto.randomUUID) {
                 return crypto.randomUUID();
             }
-            // Fallback for HTTP
             return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
                 const r = Math.random() * 16 | 0;
                 const v = c === 'x' ? r : (r & 0x3 | 0x8);
@@ -663,25 +529,16 @@
         // State
         const state = { file: null, srt: '', filename: 'subtitles', lastError: null };
         const api = window.location.origin;
-        let sse = null, timer = null, start = null;
+        let sse = null, timer = null, start = null, currentXhr = null, cancelled = false;
 
         // Configuration
         const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
         const SUPPORTED_FORMATS = {
-            'video/mp4': '.mp4',
-            'video/mpeg': '.mpeg',
-            'video/quicktime': '.mov',
-            'video/x-msvideo': '.avi',
-            'video/x-matroska': '.mkv',
-            'audio/mpeg': '.mp3',
-            'audio/mp3': '.mp3',
-            'audio/wav': '.wav',
-            'audio/x-wav': '.wav',
-            'audio/wave': '.wav',
-            'audio/m4a': '.m4a',
-            'audio/x-m4a': '.m4a',
-            'audio/flac': '.flac',
-            'audio/ogg': '.ogg'
+            'video/mp4': '.mp4', 'video/mpeg': '.mpeg', 'video/quicktime': '.mov',
+            'video/x-msvideo': '.avi', 'video/x-matroska': '.mkv',
+            'audio/mpeg': '.mp3', 'audio/mp3': '.mp3', 'audio/wav': '.wav',
+            'audio/x-wav': '.wav', 'audio/wave': '.wav', 'audio/m4a': '.m4a',
+            'audio/x-m4a': '.m4a', 'audio/flac': '.flac', 'audio/ogg': '.ogg'
         };
 
         // Elements
@@ -698,7 +555,6 @@
             fileDisplay: $('file-display'),
             historyList: $('history-list'), noHistory: $('no-history'),
             logBox: $('log-box'),
-            // Two-phase progress elements
             uploadPhase: $('upload-phase'), processPhase: $('process-phase'),
             uploadRing: $('upload-ring'), uploadPct: $('upload-pct'),
             uploadTransferred: $('upload-transferred'), uploadSpeed: $('upload-speed'), uploadEta: $('upload-eta'),
@@ -706,8 +562,13 @@
             processStageLabel: $('process-stage-label'),
             phaseUploadBadge: $('phase-upload-badge'), phaseProcessBadge: $('phase-process-badge'),
             elapsed: $('elapsed'),
-            pageTitle: $('page-title'), pageDesc: $('page-desc')
+            pageTitle: $('page-title'), pageDesc: $('page-desc'),
+            sidebar: $('sidebar'), backdrop: $('backdrop'), menuToggle: $('menu-toggle'), menuClose: $('menu-close')
         };
+
+        // Mobile sidebar drawer
+        function openMenu() { el.sidebar.classList.add('open'); el.backdrop.classList.remove('hidden'); }
+        function closeMenu() { el.sidebar.classList.remove('open'); el.backdrop.classList.add('hidden'); }
 
         // Navigation
         function setView(v) {
@@ -716,7 +577,7 @@
                 el.navStudio.classList.add('active');
                 el.studioView.classList.remove('hidden');
                 el.historyView.classList.add('hidden');
-                el.pageTitle.textContent = 'Studio';
+                el.pageTitle.textContent = 'Home';
                 el.pageDesc.textContent = 'Generate subtitles from audio & video';
             } else {
                 el.navHistory.classList.add('active');
@@ -726,70 +587,49 @@
                 el.pageDesc.textContent = 'Your previous transcriptions';
                 renderHistory();
             }
+            closeMenu();
         }
 
         // File handling
         function selectFile(file) {
             if (!file) return;
-
-            // Client-side validation
             const validation = validateFileClient(file);
             if (!validation.valid) {
                 toast(validation.error, 'error');
-                el.fileInput.value = ''; // Reset input
+                el.fileInput.value = '';
                 return;
             }
-
             state.file = file;
             state.filename = file.name.replace(/\.[^/.]+$/, '');
             el.fileName.textContent = file.name;
             el.fileCard.classList.remove('hidden');
             el.statusText.textContent = 'File Ready';
-
-            // Show file info and estimated time
             const sizeMB = Math.round(file.size / 1024 / 1024);
             const estimatedTime = estimateProcessingTime(file.size);
             toast(`File loaded: ${sizeMB}MB (Est. ${estimatedTime})`, 'success');
         }
 
-        /**
-         * Client-side file validation
-         */
         function validateFileClient(file) {
-            // Check file size
             if (file.size === 0) {
                 return { valid: false, error: 'File is empty. Please select a valid file.' };
             }
-
             if (file.size > MAX_FILE_SIZE) {
                 const sizeMB = Math.round(file.size / 1024 / 1024);
                 const maxGB = Math.round(MAX_FILE_SIZE / 1024 / 1024 / 1024);
                 return { valid: false, error: `File too large (${sizeMB}MB). Maximum size is ${maxGB}GB.` };
             }
-
-            // Check file type
             const isSupported = Object.keys(SUPPORTED_FORMATS).includes(file.type);
             const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
             const validExts = Object.values(SUPPORTED_FORMATS);
-
             if (!isSupported && !validExts.includes(ext)) {
-                return {
-                    valid: false,
-                    error: `Unsupported format. Please use: MP4, MP3, WAV, MOV, AVI, M4A, FLAC, or OGG`
-                };
+                return { valid: false, error: `Unsupported format. Please use: MP4, MP3, WAV, MOV, AVI, M4A, FLAC, or OGG` };
             }
-
             return { valid: true };
         }
 
-        /**
-         * Estimate processing time based on file size
-         */
         function estimateProcessingTime(bytes) {
             const mb = bytes / 1024 / 1024;
-            // Rough estimate: ~30 seconds per 10MB
             const minutes = Math.ceil((mb / 10) * 0.5);
-
             if (minutes < 1) return '< 1 min';
             if (minutes < 5) return `~${minutes} min`;
             if (minutes < 30) return `${minutes}-${minutes + 5} min`;
@@ -804,6 +644,7 @@
             el.processingView.classList.add('hidden');
             el.resultView.classList.add('hidden');
             el.downloadBtn.classList.add('hidden');
+            el.downloadBtn.classList.remove('flex');
             el.fileDisplay.classList.add('hidden');
             el.statusText.textContent = 'Ready';
             setView('studio');
@@ -812,14 +653,16 @@
         // Process
         async function process() {
             if (!state.file) return;
+            cancelled = false;
+            const cancelBtnEl = document.getElementById('cancel-job');
+            if (cancelBtnEl) { cancelBtnEl.disabled = false; cancelBtnEl.textContent = 'Cancel'; }
             const jobId = generateUUID();
 
             el.uploadView.classList.add('hidden');
             el.processingView.classList.remove('hidden');
             el.statusText.textContent = 'Processing';
-            el.logBox.innerHTML = '<div class="text-primary-600">[System] Starting...</div>';
+            el.logBox.innerHTML = '<div class="text-accent">[System] Starting…</div>';
 
-            // Reset to upload phase
             showUploadPhase();
 
             start = Date.now();
@@ -830,52 +673,38 @@
                 log('Job: ' + jobId.substring(0, 8));
                 const words = parseInt(el.wordsSlider.value);
 
-                // Create FormData
                 const formData = new FormData();
                 formData.append('file', state.file);
                 formData.append('wordLimit', words);
                 formData.append('jobId', jobId);
 
-                // Upload with XMLHttpRequest for progress tracking
                 const data = await new Promise((resolve, reject) => {
                     const xhr = new XMLHttpRequest();
+                    currentXhr = xhr;
                     let uploadStartTime = Date.now();
                     let lastLoaded = 0;
                     let lastTime = uploadStartTime;
 
-                    // Track upload progress
                     xhr.upload.addEventListener('progress', (e) => {
                         if (e.lengthComputable) {
                             const now = Date.now();
                             const loaded = e.loaded;
                             const total = e.total;
                             const percent = Math.round((loaded / total) * 100);
-
-                            // Calculate speed (bytes per second)
-                            const timeDiff = (now - lastTime) / 1000; // seconds
+                            const timeDiff = (now - lastTime) / 1000;
                             const bytesDiff = loaded - lastLoaded;
-
-                            // Update every 100ms minimum to avoid jitter
                             if (timeDiff >= 0.1) {
-                                const speed = bytesDiff / timeDiff; // bytes/sec
+                                const speed = bytesDiff / timeDiff;
                                 const speedMBps = (speed / (1024 * 1024)).toFixed(2);
-
-                                // Calculate remaining time
                                 const remaining = total - loaded;
                                 const etaSeconds = speed > 0 ? Math.ceil(remaining / speed) : 0;
                                 const etaFormatted = formatETA(etaSeconds);
-
-                                // Format loaded/total
                                 const loadedMB = (loaded / (1024 * 1024)).toFixed(1);
                                 const totalMB = (total / (1024 * 1024)).toFixed(1);
-
-                                // Update upload phase progress (0-100%)
                                 updateUploadProgress(percent, loadedMB, totalMB, speedMBps, etaFormatted);
-
                                 if (percent % 20 === 0 || percent === 100) {
                                     log(`Upload: ${percent}% (${speedMBps} MB/s)`);
                                 }
-
                                 lastLoaded = loaded;
                                 lastTime = now;
                             }
@@ -885,9 +714,8 @@
                     xhr.upload.addEventListener('loadend', () => {
                         const totalTime = ((Date.now() - uploadStartTime) / 1000).toFixed(1);
                         log(`Upload complete in ${totalTime}s`);
-                        // Switch to processing phase
                         showProcessPhase();
-                        updateProcessProgress(0, 'converting', 'Converting audio format...');
+                        updateProcessProgress(0, 'converting', 'Converting audio format…');
                     });
 
                     xhr.addEventListener('load', () => {
@@ -914,44 +742,34 @@
                     xhr.addEventListener('error', () => {
                         reject(new Error('Network error. Please check your internet connection and try again.'));
                     });
-
                     xhr.addEventListener('timeout', () => {
                         reject(new Error('Processing timeout. Your connection may be too slow or the file is too large.'));
                     });
-
                     xhr.addEventListener('abort', () => {
                         reject(new Error('Upload cancelled'));
                     });
 
-                    // 60 minute timeout
                     xhr.timeout = 60 * 60 * 1000;
-
                     xhr.open('POST', `${api}/api/transcribe`);
                     xhr.send(formData);
                 });
 
                 if (data.srt) {
                     state.srt = data.srt;
-                    state.lastError = null; // Clear any previous errors
-
-                    // Update Model Display Info
+                    state.lastError = null;
                     const modelName = data.usedFallback ? 'Whisper (Fallback)' : 'Gemini 2.5 Pro';
-                    const modelColor = data.usedFallback ? 'text-amber-600' : 'text-slate-400';
-
+                    const modelColor = data.usedFallback ? 'text-amber-600' : 'text-ink-faint';
                     if (el.modelDisplay) {
                         el.modelDisplay.textContent = modelName;
                         el.modelDisplay.className = `text-xs mt-0.5 ${modelColor}`;
                     }
-
                     log(`Complete! Used: ${modelName}`);
                     if (data.usedFallback) {
                         log(`Fallback reason: ${data.fallbackReason}`);
                         toast(`Used Whisper Fallback: ${data.fallbackReason}`, 'info');
                     }
-
                     saveHistory(state.filename, data.srt, words);
                     showResult();
-
                     if (!data.usedFallback) {
                         toast('Subtitles generated successfully!', 'success');
                     }
@@ -959,15 +777,12 @@
                     throw new Error('Empty response from server');
                 }
             } catch (e) {
+                if (cancelled) return;
                 state.lastError = e.message;
                 log('Error: ' + e.message);
-
-                // Enhanced error handling with user-friendly messages
                 const errorMsg = getUserFriendlyError(e.message);
                 toast(errorMsg, 'error');
                 updateProgress(0, 'error', errorMsg);
-
-                // Show retry option for certain errors
                 if (shouldShowRetry(e.message)) {
                     showRetryOption();
                 } else {
@@ -979,73 +794,45 @@
             }
         }
 
-        /**
-         * Convert technical errors to user-friendly messages
-         */
-        function getUserFriendlyError(errorMsg) {
-            if (errorMsg.includes('Rate limit')) {
-                return 'Too many requests. Please wait a few minutes and try again.';
-            }
-            if (errorMsg.includes('timeout') || errorMsg.includes('408')) {
-                return 'Processing timeout. Try a shorter file or reduce quality settings.';
-            }
-            if (errorMsg.includes('quota') || errorMsg.includes('429')) {
-                return 'API quota exceeded. Please try again in a few minutes.';
-            }
-            if (errorMsg.includes('Invalid file') || errorMsg.includes('Unsupported')) {
-                return errorMsg; // Already user-friendly
-            }
-            if (errorMsg.includes('File too large')) {
-                return errorMsg; // Already user-friendly
-            }
-            if (errorMsg.includes('network') || errorMsg.includes('fetch')) {
-                return 'Network error. Please check your connection and try again.';
-            }
+        // Compat shim — generic progress updates route to the processing ring.
+        function updateProgress(percent, stage, msg) {
+            updateProcessProgress(percent, stage, msg);
+        }
 
-            // Default message for unknown errors
+        function getUserFriendlyError(errorMsg) {
+            if (errorMsg.includes('Rate limit')) return 'Too many requests. Please wait a few minutes and try again.';
+            if (errorMsg.includes('timeout') || errorMsg.includes('408')) return 'Processing timeout. Try a shorter file or reduce quality settings.';
+            if (errorMsg.includes('quota') || errorMsg.includes('429')) return 'API quota exceeded. Please try again in a few minutes.';
+            if (errorMsg.includes('Invalid file') || errorMsg.includes('Unsupported')) return errorMsg;
+            if (errorMsg.includes('File too large')) return errorMsg;
+            if (errorMsg.includes('network') || errorMsg.includes('fetch')) return 'Network error. Please check your connection and try again.';
             return 'An error occurred. Please try again or contact support if the issue persists.';
         }
 
-        /**
-         * Determine if retry button should be shown
-         */
         function shouldShowRetry(errorMsg) {
             const retryableErrors = ['timeout', 'network', 'quota', 'Rate limit', '429', '408', '503'];
             return retryableErrors.some(err => errorMsg.includes(err));
         }
 
-        /**
-         * Show retry option in the UI
-         */
         function showRetryOption() {
             const retryHtml = `
-                <div class="mt-4 flex gap-3 justify-center">
+                <div class="mt-5 flex gap-3 justify-center">
                     <button onclick="retry()" class="btn btn-primary px-6 py-2.5 text-sm">
-                        <svg class="w-4 h-4 inline mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
+                        <svg class="w-4 h-4 inline mr-2 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                         Retry
                     </button>
                     <button onclick="reset()" class="btn btn-secondary px-6 py-2.5 text-sm">Cancel</button>
-                </div>
-            `;
-
-            const msgEl = document.getElementById('progress-msg');
+                </div>`;
+            const msgEl = document.getElementById('process-msg');
             if (msgEl && !msgEl.nextElementSibling?.querySelector('button')) {
                 msgEl.insertAdjacentHTML('afterend', retryHtml);
             }
         }
 
-        /**
-         * Retry the last failed operation
-         */
         window.retry = function () {
             if (state.file) {
-                // Remove retry buttons
                 const retryBtns = document.querySelectorAll('#processing-view button');
                 retryBtns.forEach(btn => btn.remove());
-
-                // Retry processing
                 setTimeout(() => process(), 500);
             }
         };
@@ -1054,9 +841,13 @@
             el.uploadView.classList.add('hidden');
             el.processingView.classList.add('hidden');
             el.resultView.classList.remove('hidden');
-            // Hide milliseconds in the editor for cleaner partial reading
-            // But KEEP them in the state.srt so the download button still gets the correct format
+            // Hide milliseconds in the editor for cleaner reading; keep them in state.srt for download.
             el.editor.value = state.srt.replace(/,\d{3}/g, '');
+            const cueEl = document.getElementById('cue-count');
+            if (cueEl) {
+                const cues = (state.srt.match(/-->/g) || []).length;
+                cueEl.textContent = `${cues} cue${cues === 1 ? '' : 's'}`;
+            }
             el.downloadBtn.classList.remove('hidden');
             el.downloadBtn.classList.add('flex');
             el.fileDisplay.textContent = state.filename + '.srt';
@@ -1071,11 +862,8 @@
             sse.onmessage = e => {
                 try {
                     const d = JSON.parse(e.data);
-                    // Map server progress to processing phase (10-100 from server -> 0-100 for display)
                     if (d.stage !== 'connected' && d.stage !== 'upload') {
-                        // Ensure we're in process phase
                         if (!el.processPhase.classList.contains('hidden')) {
-                            // Server sends 10-100, we display as 0-100
                             const displayPct = Math.max(0, Math.min(100, (d.percent - 10) * (100 / 90)));
                             updateProcessProgress(displayPct, d.stage, d.message);
                         }
@@ -1087,15 +875,15 @@
 
         function disconnectSSE() { if (sse) { sse.close(); sse = null; } }
 
-        // Two-phase progress functions
+        // Two-phase progress
         function showUploadPhase() {
             el.uploadPhase.classList.remove('hidden');
             el.processPhase.classList.add('hidden');
-            el.phaseUploadBadge.classList.remove('bg-slate-100', 'text-slate-400');
-            el.phaseUploadBadge.classList.add('bg-emerald-100', 'text-emerald-700');
-            el.phaseProcessBadge.classList.remove('bg-primary-100', 'text-primary-700');
-            el.phaseProcessBadge.classList.add('bg-slate-100', 'text-slate-400');
-            // Reset upload ring
+            const ov = document.getElementById('phase-overline'); if (ov) ov.textContent = 'UPLOADING';
+            el.processMsg.textContent = 'Preparing your audio…';
+            el.phaseUploadBadge.className = 'phase-badge flex items-center gap-2 px-4 py-2 rounded-full bg-teal-100 text-teal-700 font-semibold text-sm';
+            el.phaseUploadBadge.querySelector('span').textContent = 'Uploading';
+            el.phaseProcessBadge.className = 'phase-badge flex items-center gap-2 px-4 py-2 rounded-full bg-slate-100 text-slate-400 font-semibold text-sm';
             el.uploadRing.style.strokeDashoffset = 439.82;
             el.uploadPct.textContent = '0%';
             el.uploadTransferred.textContent = '0 MB';
@@ -1106,47 +894,35 @@
         function showProcessPhase() {
             el.uploadPhase.classList.add('hidden');
             el.processPhase.classList.remove('hidden');
-            // Update badges
-            el.phaseUploadBadge.classList.remove('bg-emerald-100', 'text-emerald-700');
-            el.phaseUploadBadge.classList.add('bg-emerald-100', 'text-emerald-600');
+            const ov = document.getElementById('phase-overline'); if (ov) ov.textContent = 'ANALYZING';
+            el.phaseUploadBadge.className = 'phase-badge flex items-center gap-2 px-4 py-2 rounded-full bg-teal-100 text-teal-600 font-semibold text-sm';
             el.phaseUploadBadge.querySelector('span').textContent = 'Uploaded ✓';
-            el.phaseProcessBadge.classList.remove('bg-slate-100', 'text-slate-400');
-            el.phaseProcessBadge.classList.add('bg-primary-100', 'text-primary-700');
-            // Reset process ring
+            el.phaseProcessBadge.className = 'phase-badge flex items-center gap-2 px-4 py-2 rounded-full bg-primary-100 text-primary-700 font-semibold text-sm';
             el.processRing.style.strokeDashoffset = 439.82;
             el.processPct.textContent = '0%';
             resetProcessStages();
         }
 
         function updateUploadProgress(percent, loadedMB, totalMB, speedMBps, eta) {
-            // Update ring (circumference = 2 * π * 70 = 439.82)
             const offset = 439.82 - (439.82 * percent / 100);
             el.uploadRing.style.strokeDashoffset = offset;
             el.uploadPct.textContent = percent + '%';
             el.uploadTransferred.textContent = `${loadedMB} / ${totalMB} MB`;
             el.uploadSpeed.textContent = `${speedMBps} MB/s`;
             el.uploadEta.textContent = eta;
+            el.processMsg.textContent = `Uploading — ${loadedMB} of ${totalMB} MB${eta && eta !== '--' && eta !== 'calculating…' ? ' · about ' + eta + ' left' : ''}`;
         }
 
         function updateProcessProgress(percent, stage, msg) {
-            // Update ring
             const offset = 439.82 - (439.82 * percent / 100);
             el.processRing.style.strokeDashoffset = offset;
             el.processPct.textContent = Math.round(percent) + '%';
-
-            // Update stage label
             const labels = {
-                converting: 'CONVERTING',
-                uploading: 'UPLOADING TO AI',
-                processing: 'PROCESSING',
-                transcribing: 'TRANSCRIBING',
-                formatting: 'FORMATTING',
-                complete: 'COMPLETE!',
-                error: 'ERROR'
+                converting: 'CONVERTING', uploading: 'UPLOADING TO AI', processing: 'PROCESSING',
+                transcribing: 'TRANSCRIBING', formatting: 'FORMATTING', complete: 'COMPLETE!', error: 'ERROR'
             };
             el.processStageLabel.textContent = labels[stage] || 'PROCESSING';
             el.processMsg.textContent = msg;
-
             updateProcessStages(stage);
         }
 
@@ -1154,7 +930,6 @@
             const order = ['converting', 'uploading-ai', 'transcribing', 'complete'];
             const stageMap = { converting: 0, uploading: 1, processing: 2, transcribing: 2, formatting: 2, complete: 3, done: 3 };
             const idx = stageMap[current] ?? -1;
-
             document.querySelectorAll('.stage-mini').forEach(s => {
                 const i = order.indexOf(s.dataset.stage);
                 s.classList.remove('active', 'complete');
@@ -1164,9 +939,7 @@
         }
 
         function resetProcessStages() {
-            document.querySelectorAll('.stage-mini').forEach(s => {
-                s.classList.remove('active', 'complete');
-            });
+            document.querySelectorAll('.stage-mini').forEach(s => s.classList.remove('active', 'complete'));
         }
 
         function startTimer() {
@@ -1188,9 +961,8 @@
             el.logBox.scrollTop = el.logBox.scrollHeight;
         }
 
-        // Format ETA in human readable format
         function formatETA(seconds) {
-            if (seconds <= 0) return 'calculating...';
+            if (seconds <= 0) return 'calculating…';
             if (seconds < 60) return `${seconds}s`;
             if (seconds < 3600) {
                 const mins = Math.floor(seconds / 60);
@@ -1202,8 +974,7 @@
             return `${hours}h ${mins}m`;
         }
 
-
-        // History - Server-side storage with localStorage fallback
+        // History — server-side storage with localStorage fallback
         async function getHistory() {
             try {
                 const res = await fetch(`${api}/api/history`);
@@ -1211,12 +982,7 @@
                 return await res.json();
             } catch (error) {
                 console.error('Error fetching history from server, using localStorage fallback:', error);
-                // Fallback to localStorage
-                try {
-                    return JSON.parse(localStorage.getItem('srt_history') || '[]');
-                } catch {
-                    return [];
-                }
+                try { return JSON.parse(localStorage.getItem('srt_history') || '[]'); } catch { return []; }
             }
         }
 
@@ -1227,26 +993,19 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name, content, words })
                 });
-
                 if (!res.ok) throw new Error('Failed to save history');
-
-                // Also save to localStorage as backup
                 const h = JSON.parse(localStorage.getItem('srt_history') || '[]');
                 h.unshift({ id: Date.now(), name, content, words, date: new Date().toISOString() });
                 localStorage.setItem('srt_history', JSON.stringify(h.slice(0, 50)));
-
                 return true;
             } catch (error) {
                 console.error('Error saving history to server, using localStorage fallback:', error);
-                // Fallback to localStorage only
                 try {
                     const h = JSON.parse(localStorage.getItem('srt_history') || '[]');
                     h.unshift({ id: Date.now(), name, content, words, date: new Date().toISOString() });
                     localStorage.setItem('srt_history', JSON.stringify(h.slice(0, 50)));
                     return true;
-                } catch {
-                    return false;
-                }
+                } catch { return false; }
             }
         }
 
@@ -1256,26 +1015,25 @@
             el.noHistory.classList.toggle('hidden', h.length > 0);
             h.forEach(item => {
                 const div = document.createElement('div');
-                div.className = 'card p-4 flex items-center justify-between hover:shadow-md transition-shadow';
+                div.className = 'card p-4 flex items-center justify-between gap-4 hover:-translate-y-0.5 transition-transform';
                 div.innerHTML = `
-                    <div class="flex items-center gap-4">
-                        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-100 to-primary-200 flex items-center justify-center">
-                            <span class="text-primary-600 text-xs font-bold">SRT</span>
+                    <div class="flex items-center gap-4 min-w-0">
+                        <div class="w-12 h-12 shrink-0 rounded-xl bg-ink flex items-center justify-center">
+                            <span class="text-paper text-[10px] font-mono font-bold">SRT</span>
                         </div>
-                        <div>
-                            <p class="text-base font-semibold text-slate-800">${item.name}</p>
-                            <p class="text-sm text-slate-400">${new Date(item.date).toLocaleDateString()} • ${item.words} words/line</p>
+                        <div class="min-w-0">
+                            <p class="text-[15px] font-semibold text-ink truncate">${item.name}</p>
+                            <p class="text-sm text-ink-faint">${new Date(item.date).toLocaleDateString()} • ${item.words} words/line</p>
                         </div>
                     </div>
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-2 shrink-0">
                         <button onclick="loadHistory(${item.id})" class="btn btn-secondary px-5 py-2 text-sm">Open</button>
-                        <button onclick="deleteHistory(${item.id})" class="px-4 py-2 text-sm font-semibold text-red-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors" title="Delete">
-                            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <button onclick="deleteHistory(${item.id})" class="w-9 h-9 flex items-center justify-center text-red-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors" title="Delete" aria-label="Delete">
+                            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
                             </svg>
                         </button>
-                    </div>
-                `;
+                    </div>`;
                 el.historyList.appendChild(div);
             });
         }
@@ -1297,30 +1055,20 @@
                 try {
                     const res = await fetch(`${api}/api/history/${id}`, { method: 'DELETE' });
                     if (!res.ok) throw new Error('Failed to delete history item');
-
-                    // Also remove from localStorage
                     try {
                         const h = JSON.parse(localStorage.getItem('srt_history') || '[]');
-                        const filtered = h.filter(x => x.id !== id);
-                        localStorage.setItem('srt_history', JSON.stringify(filtered));
-                    } catch (e) {
-                        console.warn('Failed to update localStorage:', e);
-                    }
-
+                        localStorage.setItem('srt_history', JSON.stringify(h.filter(x => x.id !== id)));
+                    } catch (e) { console.warn('Failed to update localStorage:', e); }
                     await renderHistory();
                     toast('History item deleted', 'success');
                 } catch (error) {
                     console.error('Error deleting history item:', error);
-                    // Fallback to localStorage only
                     try {
                         const h = JSON.parse(localStorage.getItem('srt_history') || '[]');
-                        const filtered = h.filter(x => x.id !== id);
-                        localStorage.setItem('srt_history', JSON.stringify(filtered));
+                        localStorage.setItem('srt_history', JSON.stringify(h.filter(x => x.id !== id)));
                         await renderHistory();
                         toast('History item deleted (local only)', 'info');
-                    } catch (e) {
-                        toast('Failed to delete history item', 'error');
-                    }
+                    } catch (e) { toast('Failed to delete history item', 'error'); }
                 }
             }
         };
@@ -1330,15 +1078,11 @@
                 try {
                     const res = await fetch(`${api}/api/history`, { method: 'DELETE' });
                     if (!res.ok) throw new Error('Failed to clear history');
-
-                    // Also clear localStorage
                     localStorage.removeItem('srt_history');
-
                     await renderHistory();
                     toast('History cleared', 'info');
                 } catch (error) {
                     console.error('Error clearing history:', error);
-                    // Fallback to localStorage only
                     localStorage.removeItem('srt_history');
                     await renderHistory();
                     toast('History cleared (local only)', 'info');
@@ -1348,24 +1092,20 @@
 
         // Utils
         function toast(msg, type = 'info') {
-            const colors = { success: 'bg-emerald-500', error: 'bg-red-500', info: 'bg-slate-700' };
+            const colors = { success: 'bg-teal-600', error: 'bg-red-500', info: 'bg-ink' };
             const t = document.createElement('div');
-            t.className = `toast ${colors[type]} px-5 py-3 rounded-xl text-sm font-medium text-white shadow-lg`;
+            t.className = `toast ${colors[type]} px-5 py-3 rounded-xl text-sm font-semibold text-white shadow-xl max-w-xs`;
             t.textContent = msg;
             $('toasts').appendChild(t);
-            setTimeout(() => t.remove(), 3000);
+            setTimeout(() => t.remove(), 3200);
         }
 
         function download() {
-            // Ensure SRT uses CRLF line endings for Premiere Pro compatibility
-            const srtContent = state.srt.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n');
-            
-            // Add UTF-8 BOM for better Premiere Pro compatibility
-            const BOM = '\uFEFF';
-            const blob = new Blob([BOM + srtContent], { 
-                type: 'text/plain;charset=utf-8' 
-            });
-            
+            // Premiere Pro is strict about SRT: UTF-8 *without* a BOM (a BOM corrupts the
+            // first cue index → "file contains errors"), CRLF line endings, trailing newline.
+            let srtContent = state.srt.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n');
+            if (!srtContent.endsWith('\r\n')) srtContent += '\r\n';
+            const blob = new Blob([srtContent], { type: 'application/x-subrip;charset=utf-8' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
             a.download = state.filename + '.srt';
@@ -1383,19 +1123,43 @@
         el.navHistory.onclick = () => setView('history');
         el.newBtn.onclick = reset;
         el.dropZone.onclick = () => el.fileInput.click();
+        el.dropZone.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.fileInput.click(); } };
         el.browseBtn.onclick = e => { e.stopPropagation(); el.fileInput.click(); };
         el.fileInput.onchange = e => selectFile(e.target.files[0]);
         el.dropZone.ondragover = e => { e.preventDefault(); el.dropZone.classList.add('drop-active'); };
         el.dropZone.ondragleave = () => el.dropZone.classList.remove('drop-active');
         el.dropZone.ondrop = e => { e.preventDefault(); el.dropZone.classList.remove('drop-active'); selectFile(e.dataTransfer.files[0]); };
+        el.menuToggle.onclick = openMenu;
+        el.menuClose.onclick = closeMenu;
+        el.backdrop.onclick = closeMenu;
 
-        // Init
-        el.wordsSlider.oninput = e => el.wordsValue.textContent = e.target.value;
+        function updateWordsControl(v) {
+            v = parseInt(v) || 8;
+            el.wordsValue.textContent = v;
+            const pct = ((v - 3) / 12) * 100;
+            el.wordsSlider.style.setProperty('--fill', pct.toFixed(2) + '%');
+            const hint = $('words-hint');
+            if (hint) hint.textContent = v <= 5 ? 'short' : v <= 9 ? 'balanced' : v <= 12 ? 'fuller' : 'long';
+        }
+        el.wordsSlider.oninput = e => updateWordsControl(e.target.value);
+        updateWordsControl(el.wordsSlider.value);
         el.generateBtn.onclick = process;
         el.downloadBtn.onclick = download;
         el.copyBtn.onclick = copy;
 
-        // Load history on start
+        // Cancel an in-flight job: abort the upload, close the live stream, stop the timer, return to upload screen.
+        const cancelJobBtn = document.getElementById('cancel-job');
+        if (cancelJobBtn) cancelJobBtn.addEventListener('click', () => {
+            cancelled = true;
+            cancelJobBtn.disabled = true;
+            cancelJobBtn.textContent = 'Cancelling…';
+            try { if (currentXhr) currentXhr.abort(); } catch {}
+            disconnectSSE();
+            stopTimer();
+            reset();
+            toast('Analysis cancelled', 'info');
+        });
+
         renderHistory();
         console.log('SRT Studio initialized');
     </script>
